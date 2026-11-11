@@ -1,0 +1,18 @@
+services:
+  folio:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      FOLIO_PASSWORD: ${FOLIO_PASSWORD:?Set FOLIO_PASSWORD in .env before starting}
+      FOLIO_SECURE_COOKIE: ${FOLIO_SECURE_COOKIE:-false}
+    volumes:
+      - folio-data:/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+volumes:
+  folio-data:
