@@ -10,6 +10,7 @@ Folio is a web-first, single-user reader for **DRM-free EPUB and PDF** files. Yo
 
 - Upload multiple EPUBs and PDFs, with drag and drop and a 100 MiB per-file limit.
 - Read paginated EPUBs and PDFs with selectable text, bookmarks, font/zoom controls, a dark theme, and saved reading positions.
+- Write on PDFs with a pressure-sensitive pen, translucent highlighter, stroke eraser, colors, thickness controls, and undo/redo. Ink saves automatically and scales with the page.
 - Highlight passages in four colors, add and edit notes, jump back to passages, and export your notebook as Markdown.
 - Organize books into collections, save favorites, update titles/authors, and track reading status.
 - Search, sort, and switch between a cover grid and list. The interface adapts to phones and tablets.
@@ -80,6 +81,18 @@ React + TypeScript web app
 Go keeps deployment small and makes the backend usable by future native clients. TypeScript fits browser reading engines and gives the frontend typed data models. SQLite suits a personal, self-hosted library without an external database. PDF highlights use normalized page rectangles; EPUB highlights use CFIs, so they can be rendered by another client. APIs and storage are separate from presentation.
 
 See [API documentation](docs/API.md) for requests and annotation formats, and [contributing](CONTRIBUTING.md) for development checks.
+
+## Handwriting on PDFs
+
+![PDF handwriting tools and saved pen strokes](docs/ink.png)
+
+Open a PDF and choose **Write on this PDF** (or the pen button). Use the pen, highlighter, or whole-stroke eraser. Pick an ink color and thickness; undo/redo buttons and `Ctrl/Cmd Z`, `Ctrl/Cmd Shift Z` or `Ctrl Y` work while writing. Histories are per page and last for the current reading session.
+
+Pens and mice can draw immediately. Fingers drag the document to scroll; enable **Finger drawing** to sketch with touch. Touches during an active pen stroke and shortly afterward are ignored to reduce accidental palm marks. OS/browser palm rejection, pinch gestures, pressure support, and latency vary by device; real Apple Pencil, Surface Pen, and S Pen hardware still needs validation. Choose **Read / select** to select PDF text normally.
+
+**Ink saved** confirms the current changes reached your server. Writes are serialized per page, including when you turn pages while a save is in flight. Failed saves leave strokes visible and offer retry and a JSON recovery copy. A stale tab is stopped with a revision-conflict message instead of overwriting newer ink; download its recovery copy before reloading the saved page. Leaving the reader waits for pending saves, and closing/reloading the tab warns about unsaved changes. Keep the tab open until a save succeeds or you have downloaded a copy.
+
+This first version stores editable ink in SQLite and leaves the original PDF unchanged. **Download book** still downloads the original; embedding ink into an exported PDF is a later feature. Markdown notebook exports contain text notes/highlights, not handwriting. A recovery JSON includes page number and vector strokes for the ink API, not a rendered PDF. Backups of the data directory include handwriting.
 
 ## Backups
 

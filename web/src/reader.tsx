@@ -1,3 +1,7 @@
+import { PDFInkLayer } from "./PDFInkLayer";
+import { PDFInkToolbar } from "./PDFInkToolbar";
+import { usePDFInk } from "./usePDFInk";
+import type { InkTool, PageSize } from "./ink";
 import { useDialogFocus } from "./useDialogFocus";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ePub from "epubjs";
@@ -20,6 +24,7 @@ import {
   Download,
   LoaderCircle,
   Highlighter,
+  PenLine,
   AlertCircle,
 } from "lucide-react";
 import {
@@ -86,6 +91,43 @@ export function Reader({
     timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     [pdfReady, setPdfReady] = useState(false),
     [pdfWidth, setPdfWidth] = useState(800);
+  const [inkEnabled, setInkEnabled] = useState(false),
+    [inkTool, setInkTool] = useState<InkTool>("pen"),
+    [inkColor, setInkColor] = useState("#394137"),
+    [penWidth, setPenWidth] = useState(3),
+    [markerWidth, setMarkerWidth] = useState(12),
+    [drawWithTouch, setDrawWithTouch] = useState(false),
+    [inkBusy, setInkBusy] = useState(false),
+    [pdfSize, setPdfSize] = useState<PageSize>({ width: 612, height: 792 });
+  const ink = usePDFInk(book.id, page, book.format === "PDF");
+  const inkWidth = inkTool === "highlighter" ? markerWidth : penWidth;
+  const changeInkMode = (enabled: boolean) => {
+    setInkEnabled(enabled);
+    setSelection(null);
+    window.getSelection()?.removeAllRanges();
+  };
+  useEffect(() => {
+    if (!inkEnabled) return;
+    const key = (event: KeyboardEvent) => {
+      if (
+        inkBusy ||
+        (event.target as HTMLElement).closest("input,textarea,select") ||
+        !(event.metaKey || event.ctrlKey)
+      )
+        return;
+      if (event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) ink.redo();
+        else ink.undo();
+      }
+      if (event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        ink.redo();
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [inkEnabled, inkBusy, ink.undo, ink.redo]);
   const moveRef = useRef<(dir: number) => void>(() => {});
   useDialogFocus(Boolean(selection), ".selection-card");
   const remember = useCallback(
@@ -273,6 +315,7 @@ export function Reader({
         const p = await pdf.current!.getPage(page);
         if (disposed) return;
         const initial = p.getViewport({ scale: 1 });
+        setPdfSize({ width: initial.width, height: initial.height });
         const scale =
           Math.max(0.3, pdfWidth / initial.width) * (fontSize / 100);
         const viewport = p.getViewport({ scale });
@@ -392,7 +435,7 @@ export function Reader({
   }, [move]);
   moveRef.current = move;
   const pdfSelected = () => {
-    if (book.format !== "PDF" || !pdfPage.current) return;
+    if (book.format !== "PDF" || !pdfPage.current || inkEnabled) return;
     const s = window.getSelection();
     if (
       !s ||
@@ -460,6 +503,14 @@ export function Reader({
         .catch((e) => setError((e as Error).message));
   };
   const close = async () => {
+    if (!(await ink.flush())) {
+      if (ink.errorPage) setPage(ink.errorPage);
+      setError(
+        "Your handwriting has not saved. Retry or save a recovery copy before leaving.",
+      );
+      setInkEnabled(true);
+      return;
+    }
     try {
       if (position.current.location)
         await updateBook(book.id, position.current);
@@ -483,6 +534,17 @@ export function Reader({
           </span>
         </div>
         <div className="reader-tools">
+          {book.format === "PDF" && (
+            <button
+              className={`icon ${inkEnabled ? "active" : ""}`}
+              aria-label="Draw on PDF"
+              aria-pressed={inkEnabled}
+              onClick={() => changeInkMode(!inkEnabled)}
+              disabled={loading || inkBusy}
+            >
+              <PenLine size={19} />
+            </button>
+          )}
           <button
             className={`icon ${panel === "contents" ? "active" : ""}`}
             aria-label="Table of contents"
@@ -535,6 +597,23 @@ export function Reader({
           </button>
         </div>
       </header>
+      {book.format === "PDF" && (
+        <PDFInkToolbar
+          ink={ink}
+          page={page}
+          enabled={inkEnabled}
+          onEnabled={changeInkMode}
+          tool={inkTool}
+          onTool={setInkTool}
+          color={inkColor}
+          onColor={setInkColor}
+          width={inkWidth}
+          onWidth={inkTool === "highlighter" ? setMarkerWidth : setPenWidth}
+          drawWithTouch={drawWithTouch}
+          onTouch={setDrawWithTouch}
+          busy={inkBusy}
+        />
+      )}
       <div className="reader-layout">
         <div className="reading-area">
           <div className="reader-chapter-label">
@@ -555,6 +634,25 @@ export function Reader({
               >
                 <canvas ref={canvas} />
                 <div ref={textLayer} className="textLayer" />
+                <PDFInkLayer
+                  key={`${book.id}:${page}`}
+                  strokes={ink.strokes}
+                  size={pdfSize}
+                  enabled={
+                    inkEnabled &&
+                    !loading &&
+                    ink.loaded &&
+                    !ink.loading &&
+                    !ink.conflict
+                  }
+                  tool={inkTool}
+                  color={inkColor}
+                  width={inkWidth}
+                  drawWithTouch={drawWithTouch}
+                  onChange={ink.change}
+                  onActive={setInkBusy}
+                  onError={setError}
+                />
                 {notes
                   .filter(
                     (n) => n.kind === "highlight" && n.anchor.page === page,
@@ -587,6 +685,21 @@ export function Reader({
             <div role="alert" className="reader-error">
               <AlertCircle size={18} />
               <span>{error}</span>
+              {ink.pending && (
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Leave without saving handwriting? Download a recovery copy first to keep your unsaved strokes.",
+                      )
+                    )
+                      onClose();
+                  }}
+                >
+                  Leave without saving
+                </button>
+              )}
               <button
                 className="icon"
                 onClick={() => setError("")}
@@ -623,7 +736,9 @@ export function Reader({
             </button>
           </footer>
           <div className="reader-hint">
-            Select a passage to highlight it or leave a thought.
+            {inkEnabled
+              ? "Write with a pen or mouse. Drag with a finger to scroll; enable finger drawing to sketch by touch."
+              : "Select a passage to highlight it or leave a thought."}
           </div>
         </div>
         {panel && (
