@@ -107,6 +107,10 @@ test("EPUB reading, text highlights, notes, bookmarks and resume", async ({
   await expect(page.locator(".reader")).toHaveClass(/theme-night/);
   await page.getByRole("button", { name: "Use paper theme" }).click();
   await page.getByRole("button", { name: "Next page", exact: true }).click();
+  // EPUB page turns relocate asynchronously after the click handler returns.
+  await expect(page.locator(".reader-progress > span")).not.toHaveText(
+    "0% through your book",
+  );
   await page.getByRole("button", { name: "Library", exact: true }).click();
   const saved = (await (await request.get("/api/v1/books")).json()).find(
     (b: { title: string }) => b.title === "Walden",

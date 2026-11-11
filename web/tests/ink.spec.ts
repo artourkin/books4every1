@@ -197,6 +197,14 @@ test("failed saves keep ink visible, offer recovery, block accidental exit, and 
   await expect(page.locator(".ink-save-state")).toContainText(
     "Test server unavailable",
   );
+  await page.getByRole("button", { name: "Next page", exact: true }).click();
+  await expect(page.getByText("PAGE 2 OF 2", { exact: true })).toBeVisible();
+  await expect(page.locator(".ink-save-state")).toContainText(
+    "Ink on page 1 has not saved",
+  );
+  await page.getByRole("button", { name: "Review page 1" }).click();
+  await expect(page.getByText("PAGE 1 OF 2", { exact: true })).toBeVisible();
+  await expect(page.locator(".reader-loading")).toHaveCount(0);
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await expect(page.locator(".reader")).toBeVisible();
   await expect(page.locator(".ink-stroke")).toHaveCount(1);

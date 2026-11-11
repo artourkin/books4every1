@@ -194,7 +194,8 @@ export function usePDFInk(bookId: string, page: number, enabled: boolean) {
     retry: () => (current.loaded ? save(page) : load(page, true)),
     reload: () => load(page, true),
     flush,
-    errorPage: [...pages.current.entries()].find(([, p]) => p.error)?.[0],
+    getErrorPage: () =>
+      [...pages.current.entries()].find(([, p]) => p.error)?.[0],
     pending: [...pages.current.values()].some((p) => p.dirty || p.saving),
   };
 }

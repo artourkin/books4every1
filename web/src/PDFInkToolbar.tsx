@@ -34,6 +34,7 @@ export function PDFInkToolbar({
   drawWithTouch,
   onTouch,
   busy,
+  onReviewPage,
 }: {
   ink: ReturnType<typeof usePDFInk>;
   page: number;
@@ -48,7 +49,10 @@ export function PDFInkToolbar({
   drawWithTouch: boolean;
   onTouch: (v: boolean) => void;
   busy: boolean;
+  onReviewPage: (page: number) => void;
 }) {
+  const failedPage = ink.getErrorPage();
+  const backgroundError = failedPage !== undefined && failedPage !== page;
   const download = () => {
     const url = URL.createObjectURL(
       new Blob(
@@ -178,7 +182,7 @@ export function PDFInkToolbar({
         </button>
       )}
       <div
-        className={`ink-save-state ${ink.error ? "ink-save-error" : ""}`}
+        className={`ink-save-state ${ink.error || backgroundError ? "ink-save-error" : ""}`}
         role="status"
         aria-live="polite"
       >
@@ -213,6 +217,14 @@ export function PDFInkToolbar({
                 Retry
               </button>
             )}
+          </>
+        ) : backgroundError ? (
+          <>
+            <AlertCircle size={14} />
+            <span>Ink on page {failedPage} has not saved.</span>
+            <button disabled={busy} onClick={() => onReviewPage(failedPage!)}>
+              Review page {failedPage}
+            </button>
           </>
         ) : !ink.loaded ? (
           <>

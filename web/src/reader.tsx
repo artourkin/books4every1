@@ -504,7 +504,8 @@ export function Reader({
   };
   const close = async () => {
     if (!(await ink.flush())) {
-      if (ink.errorPage) setPage(ink.errorPage);
+      const failedPage = ink.getErrorPage();
+      if (failedPage) setPage(failedPage);
       setError(
         "Your handwriting has not saved. Retry or save a recovery copy before leaving.",
       );
@@ -612,6 +613,7 @@ export function Reader({
           drawWithTouch={drawWithTouch}
           onTouch={setDrawWithTouch}
           busy={inkBusy}
+          onReviewPage={setPage}
         />
       )}
       <div className="reader-layout">
