@@ -28,6 +28,8 @@ docker compose up -d --build
 
 Open **http://localhost:8080**. The default Compose setup binds to loopback. Put an HTTPS reverse proxy in front of it for remote access, preserve the original `Host` header, and set `FOLIO_SECURE_COOKIE=true` when using HTTPS. Allow request bodies of at least 101 MiB at the proxy.
 
+For access from other devices on your home network, follow the [homelab deployment guide](docs/HOMELAB.md). Compose host binding and port are configurable with `FOLIO_BIND_ADDR` and `FOLIO_PORT`; the defaults remain `127.0.0.1:8080`.
+
 The `folio-data` named volume contains the SQLite database and original books. The image runs as an unprivileged user with a read-only root filesystem. A fresh instance starts empty; choose the sample library from the empty state or library settings to explore.
 
 To use a bind mount instead of a named volume, make the data directory writable by UID/GID `65532:65532`.
