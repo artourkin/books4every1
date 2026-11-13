@@ -4,9 +4,13 @@ Base path: `/api/v1`. Responses use JSON except files/covers and `204 No Content
 
 ## Authentication
 
-For browsers, `POST /session` with `{"password":"your password"}` sets an HttpOnly, SameSite=Strict cookie for 30 days. `GET /session` returns `{"authenticated":true,"passwordRequired":true}`. `DELETE /session` clears the browser's cookie. Changing the configured password invalidates all session signatures. Logout clears that browser's cookie; it is not server-side revocation of a copied cookie.
+For accounts, `POST /session` with `{"username":"alex","password":"…"}` sets an HttpOnly, SameSite=Strict cookie for 30 days. `GET /session` returns `authenticated`, `passwordRequired`, `accountsEnabled`, and `user` (null before accounts are enabled). Authenticated responses also contain `profileId` and the full `preferences` object. Account sessions have opaque random tokens; only their SHA-256 hashes are stored. `DELETE /session` revokes the current account session and clears its cookie. Password changes/resets revoke previous sessions; changing your own password issues a replacement session.
 
-Native clients/scripts may send `Authorization: Bearer <FOLIO_API_TOKEN>`. This token has full library access. Configure both a password and API token when using tokens: leaving the password empty enables unauthenticated trusted-network access. No CORS policy is enabled. Browser writes must have an Origin matching the request Host; a reverse proxy must preserve Host. Non-browser clients can omit Origin. Auth and health endpoints are public; the remaining API requires authentication when a password is set.
+Before the first owner account is created, the legacy `{"password":"…"}` login and signed-cookie mechanism remain available. A configured `FOLIO_PASSWORD` is required for access and owner creation; without one, trusted-network access is enabled until owner setup. The first `POST /users` creates an administrator and replaces the caller's legacy cookie with an account session. Its legacy-profile server preferences are copied to the owner. Afterward all protected endpoints require an account session or the server API token, and legacy signed cookies no longer authorize access. `FOLIO_PASSWORD` cannot bypass account login.
+
+Native clients/scripts may send `Authorization: Bearer <FOLIO_API_TOKEN>`. This credential has administrator and full shared-library access; with accounts enabled its preferences belong to the earliest remaining administrator. It is a server credential, not a per-user token. No CORS policy is enabled. Browser writes must have an Origin matching the request Host; a reverse proxy must preserve Host. Non-browser clients can omit Origin. Session and health endpoints are public; other endpoints enforce the current access mode. Account passwords are 8–128 UTF-8 bytes; usernames are case-insensitive, 3–32 ASCII letters/numbers/dots/underscores/dashes, starting with a letter or number.
+
+The books, reading state, collections, and annotations remain shared across accounts. Only preferences are private to each account.
 
 ```sh
 curl -H "Authorization: Bearer $FOLIO_API_TOKEN" http://localhost:8080/api/v1/books
@@ -19,6 +23,13 @@ curl -H "Authorization: Bearer $FOLIO_API_TOKEN" -F file=@book.epub http://local
 | --- | --- | --- |
 | GET | `/health` | Status and version; no authentication |
 | GET, POST, DELETE | `/session` | Authentication described above |
+| GET | `/me/preferences` | Current profile's preferences |
+| PATCH | `/me/preferences` | Atomic partial preference update; returns complete preferences |
+| POST | `/me/password` | `{"currentPassword":"…","password":"…"}`; change own password, revoke previous sessions (204) |
+| GET | `/users` | User summaries (`id`, `username`, `admin`); administrators only |
+| POST | `/users` | `{"username":"alex","password":"…","admin":false}`; creates user (201); first account becomes owner |
+| DELETE | `/users/{id}` | Administrator only; delete account/preferences/sessions (204); cannot delete self or the last administrator |
+| POST | `/users/{id}/password` | `{"password":"…"}`; administrator resets another user's password and revokes their sessions (204) |
 | GET | `/books` | Array of Book, newest imports first |
 | POST | `/books` | Multipart field `file`; returns imported Book (201) |
 | GET | `/books/{id}` | Book |
@@ -34,6 +45,30 @@ curl -H "Authorization: Bearer $FOLIO_API_TOKEN" -F file=@book.epub http://local
 | POST | `/collections` | `{"name":"Nature"}` (201); duplicate name returns 409 |
 | DELETE | `/collections/{url-encoded-name}` | Delete collection, keep/unassign books (204) |
 | POST | `/samples` | Import six optional public-domain excerpts; returns newly added Books (201); existing sample titles skipped |
+
+## Preferences
+
+`GET /me/preferences` returns the current profile's settings. Partial PATCH requests preserve untouched fields even when another device saves different settings concurrently. The last successful write to the same field wins. Unknown fields, nulls, and invalid values return 400. The caller cannot select another user's profile. Browser clients send `X-Folio-Profile: <profileId from session>` with PATCH: a different currently authenticated profile returns 409, preventing an old tab from applying its settings after an account switch. GET/session responses omit preferences when unauthenticated.
+
+Defaults:
+
+```json
+{
+  "penWidth": 3,
+  "markerWidth": 12,
+  "inkColor": "#394137",
+  "inkTool": "pen",
+  "inkBrush": "pen",
+  "drawWithTouch": false,
+  "fontSize": 100,
+  "theme": "paper",
+  "highlightColor": "yellow",
+  "libraryLayout": "grid",
+  "librarySort": "recent"
+}
+```
+
+Pen width: 1.5, 3, 5, or 8; marker width: 6, 12, 20, or 30. Ink color: six-digit hex. Tool: `pen`, `highlighter`, or `eraser`; brush: last drawing tool (`pen`/`highlighter`). Text size/page zoom: integer 70–180. Theme: `paper`/`night`; highlight color: `yellow`/`green`/`pink`/`blue`; library layout: `grid`/`list`; sort: `recent`/`title`/`author`/`progress`. Preferences do not change existing strokes; each stroke retains its original color, width, and pressure.
 
 ## Book
 

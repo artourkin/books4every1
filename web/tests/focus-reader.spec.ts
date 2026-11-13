@@ -1,3 +1,4 @@
+import { resetPreferences } from "./preferences-fixture";
 import {
   test,
   expect,
@@ -8,6 +9,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 test.beforeEach(async ({ request }) => {
+  await resetPreferences(request);
   for (const b of await (await request.get("/api/v1/books")).json())
     await request.delete("/api/v1/books/" + b.id);
 });
