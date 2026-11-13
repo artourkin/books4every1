@@ -28,3 +28,6 @@ The EPUB.js dependency uses an npm override for its XML parser because the upstr
 Contributions are licensed under AGPL-3.0-only. Please avoid committing personal books, databases, passwords, or generated reader assets. The PDF test fixture contains original text authored for Folio and is covered by the repository license.
 
 Pen tests dispatch browser Pointer Events with varying pressure and palm-like touch sequences. They verify application behavior, not physical stylus latency or OS palm rejection. Please test on actual iPad Safari/Apple Pencil and other pen hardware before claiming device compatibility.
+
+
+The mobile reader tests use a 412×915 CSS viewport at device pixel ratio 3.5. They check the canvas pixel dimensions, density increases after CDP browser pinch zoom, bounded bitmap memory, retained text selection/ink, and the minimal toolbar's hit targets and menus. These are browser emulations, not a substitute for checking display quality and pen latency on a physical phone.
