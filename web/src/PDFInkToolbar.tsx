@@ -1,10 +1,12 @@
+import { useRef } from "react";
 import {
   PenLine,
   Highlighter,
   Eraser,
   Undo2,
   Redo2,
-  MousePointer2,
+  SlidersHorizontal,
+  X,
   Check,
   LoaderCircle,
   AlertCircle,
@@ -24,7 +26,6 @@ export function PDFInkToolbar({
   ink,
   page,
   enabled,
-  onEnabled,
   tool,
   onTool,
   color,
@@ -35,11 +36,13 @@ export function PDFInkToolbar({
   onTouch,
   busy,
   onReviewPage,
+  optionsOpen,
+  onOptions,
+  onCloseOptions,
 }: {
   ink: ReturnType<typeof usePDFInk>;
   page: number;
   enabled: boolean;
-  onEnabled: (v: boolean) => void;
   tool: InkTool;
   onTool: (t: InkTool) => void;
   color: string;
@@ -50,7 +53,13 @@ export function PDFInkToolbar({
   onTouch: (v: boolean) => void;
   busy: boolean;
   onReviewPage: (page: number) => void;
+  optionsOpen: boolean;
+  onOptions: () => void;
+  onCloseOptions: () => void;
 }) {
+  const lastBrush = useRef<"pen" | "highlighter">("pen");
+  if (tool !== "eraser") lastBrush.current = tool;
+  const BrushIcon = lastBrush.current === "highlighter" ? Highlighter : PenLine;
   const failedPage = ink.getErrorPage();
   const backgroundError = failedPage !== undefined && failedPage !== page;
   const download = () => {
@@ -73,116 +82,153 @@ export function PDFInkToolbar({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return (
-    <div className={`ink-toolbar ${enabled ? "is-writing" : ""}`}>
-      {enabled ? (
+    <>
+      {enabled && (
         <div
-          className="ink-controls"
+          className="ink-toolbar"
           role="toolbar"
           aria-label="PDF writing tools"
         >
-          <div className="ink-tool-group">
-            {(
-              [
-                { id: "pen", label: "Pen", icon: PenLine },
-                {
-                  id: "highlighter",
-                  label: "Ink highlighter",
-                  icon: Highlighter,
-                },
-                { id: "eraser", label: "Stroke eraser", icon: Eraser },
-              ] as const
-            ).map((t) => (
-              <button
-                key={t.id}
-                className={`icon ${tool === t.id ? "active" : ""}`}
-                aria-label={t.label}
-                title={t.label}
-                aria-pressed={tool === t.id}
-                disabled={busy || !ink.loaded || ink.conflict}
-                onClick={() => onTool(t.id)}
-              >
-                <t.icon size={18} />
-              </button>
-            ))}
-          </div>
-          <div className="ink-colors" aria-label="Ink colors">
-            {colors.map((c) => (
-              <button
-                key={c.value}
-                style={{ background: c.value }}
-                aria-label={`${c.name} ink`}
-                title={`${c.name} ink`}
-                aria-pressed={color === c.value}
-                disabled={busy || tool === "eraser"}
-                onClick={() => onColor(c.value)}
-              >
-                {color === c.value && <Check size={12} />}
-              </button>
-            ))}
-          </div>
-          <label className="ink-width">
-            Width
-            <select
-              aria-label="Ink thickness"
-              disabled={busy || tool === "eraser"}
-              value={width}
-              onChange={(e) => onWidth(Number(e.target.value))}
-            >
-              {(tool === "highlighter" ? [6, 12, 20, 30] : [1.5, 3, 5, 8]).map(
-                (n) => (
-                  <option key={n} value={n}>
-                    {n} pt
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-          <div className="ink-tool-group">
-            <button
-              className="icon"
-              aria-label="Undo ink"
-              title="Undo (⌘/Ctrl Z)"
-              disabled={!ink.canUndo || busy}
-              onClick={ink.undo}
-            >
-              <Undo2 size={18} />
-            </button>
-            <button
-              className="icon"
-              aria-label="Redo ink"
-              title="Redo (⌘/Ctrl Shift Z)"
-              disabled={!ink.canRedo || busy}
-              onClick={ink.redo}
-            >
-              <Redo2 size={18} />
-            </button>
-          </div>
-          <label className="ink-touch">
-            <input
-              type="checkbox"
-              checked={drawWithTouch}
-              disabled={busy}
-              onChange={(e) => onTouch(e.target.checked)}
-            />
-            Finger drawing
-          </label>
           <button
-            className="ink-done"
-            disabled={busy}
-            onClick={() => onEnabled(false)}
+            className={`icon ${tool !== "eraser" ? "active" : ""}`}
+            aria-label="Use drawing tool"
+            title={lastBrush.current === "highlighter" ? "Highlighter" : "Pen"}
+            aria-pressed={tool !== "eraser"}
+            disabled={busy || !ink.loaded || ink.conflict}
+            onClick={() => onTool(lastBrush.current)}
           >
-            <MousePointer2 size={14} />
-            Read / select
+            <BrushIcon size={20} />
           </button>
+          <button
+            className={`icon ${tool === "eraser" ? "active" : ""}`}
+            aria-label="Stroke eraser"
+            title="Erase stroke"
+            aria-pressed={tool === "eraser"}
+            disabled={busy || !ink.loaded || ink.conflict}
+            onClick={() => onTool("eraser")}
+          >
+            <Eraser size={20} />
+          </button>
+          <button
+            className="icon"
+            aria-label="Undo ink"
+            title="Undo (⌘/Ctrl Z)"
+            disabled={!ink.canUndo || busy}
+            onClick={ink.undo}
+          >
+            <Undo2 size={20} />
+          </button>
+          <button
+            className={`icon ${optionsOpen ? "active" : ""}`}
+            aria-label="Pen options"
+            title="Pen options"
+            aria-expanded={optionsOpen}
+            aria-controls="pen-options"
+            data-reader-popover-trigger
+            disabled={busy}
+            onClick={onOptions}
+          >
+            <SlidersHorizontal size={20} />
+          </button>
+          {optionsOpen && (
+            <section
+              className="reader-popover pen-options"
+              id="pen-options"
+              role="dialog"
+              aria-label="Pen options"
+            >
+              <div className="popover-heading">
+                <strong>Pen options</strong>
+                <button
+                  className="icon"
+                  aria-label="Close pen options"
+                  onClick={onCloseOptions}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="pen-brushes">
+                {(
+                  [
+                    { id: "pen", label: "Pen", icon: PenLine },
+                    {
+                      id: "highlighter",
+                      label: "Ink highlighter",
+                      icon: Highlighter,
+                    },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    className={lastBrush.current === t.id ? "active" : ""}
+                    key={t.id}
+                    aria-label={t.label}
+                    aria-pressed={tool === t.id}
+                    onClick={() => onTool(t.id)}
+                  >
+                    <t.icon size={18} />
+                    {t.id === "pen" ? "Pen" : "Highlighter"}
+                  </button>
+                ))}
+              </div>
+              <div className="ink-colors" aria-label="Ink colors">
+                {colors.map((c) => (
+                  <button
+                    key={c.value}
+                    aria-label={`${c.name} ink`}
+                    title={c.name}
+                    aria-pressed={color === c.value}
+                    disabled={busy}
+                    onClick={() => onColor(c.value)}
+                  >
+                    <i style={{ background: c.value }}>
+                      {color === c.value && <Check size={13} />}
+                    </i>
+                  </button>
+                ))}
+              </div>
+              <label className="ink-width">
+                Thickness
+                <select
+                  aria-label="Ink thickness"
+                  disabled={busy || tool === "eraser"}
+                  value={width}
+                  onChange={(e) => onWidth(Number(e.target.value))}
+                >
+                  {(tool === "highlighter"
+                    ? [6, 12, 20, 30]
+                    : [1.5, 3, 5, 8]
+                  ).map((n) => (
+                    <option key={n} value={n}>
+                      {n} pt
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="ink-touch">
+                <span>Draw with a finger</span>
+                <input
+                  type="checkbox"
+                  aria-label="Finger drawing"
+                  checked={drawWithTouch}
+                  disabled={busy}
+                  onChange={(e) => onTouch(e.target.checked)}
+                />
+              </label>
+              <button
+                className="popover-action"
+                aria-label="Redo ink"
+                disabled={!ink.canRedo || busy}
+                onClick={ink.redo}
+              >
+                <Redo2 size={18} />
+                Redo last change
+              </button>
+            </section>
+          )}
         </div>
-      ) : (
-        <button className="start-writing" onClick={() => onEnabled(true)}>
-          <PenLine size={15} />
-          Write on this PDF<span>Pen, highlighter & eraser</span>
-        </button>
       )}
       <div
-        className={`ink-save-state ${ink.error || backgroundError ? "ink-save-error" : ""}`}
+        className={`ink-save-state ${ink.error || backgroundError ? "ink-save-error" : !ink.loaded || ink.pending ? "ink-save-pending" : "sr-only"}`}
         role="status"
         aria-live="polite"
       >
@@ -243,6 +289,6 @@ export function PDFInkToolbar({
           </>
         )}
       </div>
-    </div>
+    </>
   );
 }

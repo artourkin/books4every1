@@ -36,8 +36,24 @@ async function visitPDF(page: Page) {
   await expect(page.locator(".ink-save-state")).toHaveText("Ink saved");
   await page.getByRole("button", { name: "Draw on PDF", exact: true }).click();
 }
+async function penOptions(page: Page) {
+  if (
+    !(await page
+      .getByRole("dialog", { name: "Pen options", exact: true })
+      .isVisible())
+  )
+    await page
+      .getByRole("button", { name: "Pen options", exact: true })
+      .click();
+}
 let pointer = 10;
 async function stroke(page: Page, type = "pen", y = 0.25) {
+  if (
+    await page
+      .getByRole("dialog", { name: "Pen options", exact: true })
+      .isVisible()
+  )
+    await page.getByRole("button", { name: "Close pen options" }).click();
   await expect(page.locator(".pdf-ink-layer")).toHaveClass(/ink-enabled/);
   const box = (await page.locator(".pdf-ink-layer").boundingBox())!;
   const pointerId = ++pointer;
@@ -88,9 +104,14 @@ test("pressure-sensitive pen, translucent highlighter, erase, undo/redo, zoom an
   ).toBeTruthy();
   expect(ink.strokes[0].points[0].x).toBeCloseTo(0.2, 3);
   const original = await page.locator(".ink-stroke").getAttribute("d");
+  await page
+    .getByRole("button", { name: "Reader options", exact: true })
+    .click();
   await page.getByRole("button", { name: "Increase text size" }).click();
+  await page.getByRole("button", { name: "Close reader options" }).click();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
   await expect(page.locator(".ink-stroke")).toHaveAttribute("d", original!);
+  await penOptions(page);
   await page
     .getByRole("button", { name: "Ink highlighter", exact: true })
     .click();
@@ -101,7 +122,9 @@ test("pressure-sensitive pen, translucent highlighter, erase, undo/redo, zoom an
   ).toHaveAttribute("opacity", "0.3");
   await page.getByRole("button", { name: "Undo ink" }).click();
   await expect(page.locator(".ink-stroke")).toHaveCount(1);
+  await penOptions(page);
   await page.getByRole("button", { name: "Redo ink" }).click();
+  await page.getByRole("button", { name: "Close pen options" }).click();
   await expect(page.locator(".ink-stroke")).toHaveCount(2);
   await page.getByRole("button", { name: "Stroke eraser" }).click();
   await stroke(page, "pen", 0.25);
@@ -110,9 +133,12 @@ test("pressure-sensitive pen, translucent highlighter, erase, undo/redo, zoom an
   await expect(page.locator(".ink-stroke")).toHaveCount(2);
   await saved(page);
   await page.getByRole("button", { name: "Next page", exact: true }).click();
-  await expect(page.getByText("PAGE 2 OF 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Go to page, page 2 of 2", exact: true }),
+  ).toBeVisible();
   await saved(page);
   await expect(page.locator(".ink-stroke")).toHaveCount(0);
+  await penOptions(page);
   await page.getByRole("button", { name: "Pen", exact: true }).click();
   await stroke(page, "pen", 0.3);
   await saved(page);
@@ -120,7 +146,9 @@ test("pressure-sensitive pen, translucent highlighter, erase, undo/redo, zoom an
   await page
     .getByRole("button", { name: "Previous page", exact: true })
     .click();
-  await expect(page.getByText("PAGE 1 OF 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Go to page, page 1 of 2", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
   await expect(page.locator(".ink-stroke")).toHaveCount(2);
   await page.getByRole("button", { name: "Library", exact: true }).click();
@@ -136,10 +164,13 @@ test("touch is opt-in, palm touches do not ink, cancelled strokes are discarded,
   await openPDF(page, request);
   await stroke(page, "touch");
   await expect(page.locator(".ink-stroke")).toHaveCount(0);
+  await penOptions(page);
   await page.getByRole("checkbox", { name: "Finger drawing" }).check();
   await stroke(page, "touch");
   await expect(page.locator(".ink-stroke")).toHaveCount(1);
+  await penOptions(page);
   await page.getByRole("checkbox", { name: "Finger drawing" }).uncheck();
+  await page.getByRole("button", { name: "Close pen options" }).click();
   await expect(page.locator(".pdf-ink-layer")).toHaveClass(/ink-enabled/);
   const box = (await page.locator(".pdf-ink-layer").boundingBox())!;
   const pen = {
@@ -175,7 +206,7 @@ test("touch is opt-in, palm touches do not ink, cancelled strokes are discarded,
     390,
   );
   await page
-    .getByRole("button", { name: "Read / select", exact: true })
+    .getByRole("button", { name: "Finish writing", exact: true })
     .click();
   await expect(page.locator(".pdf-ink-layer")).not.toHaveClass(/ink-enabled/);
 });
@@ -198,12 +229,16 @@ test("failed saves keep ink visible, offer recovery, block accidental exit, and 
     "Test server unavailable",
   );
   await page.getByRole("button", { name: "Next page", exact: true }).click();
-  await expect(page.getByText("PAGE 2 OF 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Go to page, page 2 of 2", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".ink-save-state")).toContainText(
     "Ink on page 1 has not saved",
   );
   await page.getByRole("button", { name: "Review page 1" }).click();
-  await expect(page.getByText("PAGE 1 OF 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Go to page, page 1 of 2", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await expect(page.locator(".reader")).toBeVisible();
@@ -269,7 +304,9 @@ test("new strokes while a save is in flight survive page turns and keyboard undo
   await seen;
   await stroke(page, "pen", 0.4);
   await page.getByRole("button", { name: "Next page", exact: true }).click();
-  await expect(page.getByText("PAGE 2 OF 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Go to page, page 2 of 2", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
   await stroke(page, "pen", 0.5);
   release();
@@ -293,7 +330,9 @@ test("new strokes while a save is in flight survive page turns and keyboard undo
   await page
     .getByRole("button", { name: "Previous page", exact: true })
     .click();
-  await expect(page.getByText("PAGE 1 OF 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Go to page, page 1 of 2", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
   await page.keyboard.press("Control+z");
   await expect(page.locator(".ink-stroke")).toHaveCount(1);

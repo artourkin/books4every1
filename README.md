@@ -86,13 +86,17 @@ See [API documentation](docs/API.md) for requests and annotation formats, and [c
 
 ## Handwriting on PDFs
 
-![PDF handwriting tools and saved pen strokes](docs/ink.png)
+<img src="docs/mobile-reader.png" width="360" alt="Compact phone PDF reader with the floating pen dock" />
 
-Open a PDF and choose **Write on this PDF** (or the pen button). Use the pen, highlighter, or whole-stroke eraser. Pick an ink color and thickness; undo/redo buttons and `Ctrl/Cmd Z`, `Ctrl/Cmd Shift Z` or `Ctrl Y` work while writing. Histories are per page and last for the current reading session.
+Open a PDF and tap the **Write** button. The floating dock keeps the drawing tool, whole-stroke eraser, undo, and **Pen options** within reach. Pen options contains the pen/highlighter choice, color, thickness, finger drawing, and redo. Tap **Done** to return to text selection. `Ctrl/Cmd Z`, `Ctrl/Cmd Shift Z`, and `Ctrl Y` also work while writing. Histories are per page and last for the current reading session.
 
-Pens and mice can draw immediately. Fingers drag the document to scroll; enable **Finger drawing** to sketch with touch. Touches during an active pen stroke and shortly afterward are ignored to reduce accidental palm marks. OS/browser palm rejection, pinch gestures, pressure support, and latency vary by device; real Apple Pencil, Surface Pen, and S Pen hardware still needs validation. Choose **Read / select** to select PDF text normally.
+The header's **More** button contains navigation, notes, bookmarks, page zoom/text size, and appearance. Tap the page number to jump to another page. Saving indicators appear only while loading/saving; errors and recovery actions stay visible until resolved.
 
-**Ink saved** confirms the current changes reached your server. Writes are serialized per page, including when you turn pages while a save is in flight. Failed saves leave strokes visible and offer retry and a JSON recovery copy. A stale tab is stopped with a revision-conflict message instead of overwriting newer ink; download its recovery copy before reloading the saved page. Leaving the reader waits for pending saves, and closing/reloading the tab warns about unsaved changes. Keep the tab open until a save succeeds or you have downloaded a copy.
+Phone PDFs use a 2048-pixel-wide raster baseline where the page's shape permits it. The renderer responds to device pixel density and refreshes after browser pinch zoom, with a 16-megapixel/8192-pixel-side canvas limit to bound memory. Resolution-only refreshes retain the visible bitmap until its replacement is ready and preserve text selection and vector ink. This improves rendering detail; it does not add information to a low-resolution image embedded in an original PDF.
+
+Pens and mice can draw immediately. Fingers drag the document to scroll; enable **Finger drawing** in pen options to sketch with touch. Touches during an active pen stroke and shortly afterward are ignored to reduce accidental palm marks. Initial handwriting has been user-tested on a Galaxy S25 Ultra. Pressure, palm rejection, latency, and other devices/browser combinations still need device testing.
+
+Writes are serialized per page, including when you turn pages while a save is in flight. Failed saves leave strokes visible and offer retry and a JSON recovery copy. A stale tab is stopped with a revision-conflict message instead of overwriting newer ink; download its recovery copy before reloading the saved page. Leaving the reader waits for pending saves, and closing/reloading the tab warns about unsaved changes. Keep the tab open until a save succeeds or you have downloaded a copy.
 
 This first version stores editable ink in SQLite and leaves the original PDF unchanged. **Download book** still downloads the original; embedding ink into an exported PDF is a later feature. Markdown notebook exports contain text notes/highlights, not handwriting. A recovery JSON includes page number and vector strokes for the ink API, not a rendered PDF. Backups of the data directory include handwriting.
 
