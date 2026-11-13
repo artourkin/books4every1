@@ -1,3 +1,13 @@
+import type { Preferences } from "./preferences";
+export type User = { id: string; username: string; admin: boolean };
+export type Session = {
+  authenticated: boolean;
+  passwordRequired: boolean;
+  accountsEnabled: boolean;
+  user: User | null;
+  profileId?: string;
+  preferences?: Preferences;
+};
 export type Book = {
   id: string;
   title: string;

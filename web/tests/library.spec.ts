@@ -1,7 +1,9 @@
+import { resetPreferences } from "./preferences-fixture";
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 
 test.beforeEach(async ({ request }) => {
+  await resetPreferences(request);
   const books = await (await request.get("/api/v1/books")).json();
   for (const b of books) await request.delete("/api/v1/books/" + b.id);
   const collections = await (await request.get("/api/v1/collections")).json();

@@ -2,7 +2,7 @@
 
 A quiet, self-hosted home for your books and the thoughts they leave behind.
 
-Folio is a web-first, single-user reader for **DRM-free EPUB and PDF** files. Your books, reading positions, highlights, and notes live on your own server. It is licensed under AGPL-3.0-only.
+Folio is a web-first reader with household accounts for **DRM-free EPUB and PDF** files. Your books, reading positions, highlights, and notes live on your own server. It is licensed under AGPL-3.0-only.
 
 ![Folio library with optional public-domain excerpts](docs/library.png)
 
@@ -15,7 +15,8 @@ Folio is a web-first, single-user reader for **DRM-free EPUB and PDF** files. Yo
 - Organize books into collections, save favorites, update titles/authors, and track reading status.
 - Search, sort, and switch between a cover grid and list. The interface adapts to phones and tablets.
 - Extract EPUB metadata and raster covers. Books without a cover receive a generated typographic cover.
-- Optional password sign-in and bearer-token API access. No cloud account, analytics, or runtime CDN dependencies.
+- User accounts with server-saved pen/highlighter widths, brush, color, finger drawing, reader appearance, text size/zoom, and library layout/sort. Settings follow each account across browsers and devices.
+- Optional legacy library-password access and bearer-token API access. No cloud account, analytics, or runtime CDN dependencies.
 - Add six optional, clearly labeled public-domain sample **excerpts**, not full books.
 
 ## Self-host with Docker
@@ -62,11 +63,28 @@ Open http://localhost:5173. Vite proxies `/api` to Go on `127.0.0.1:8080`. The p
 | `FOLIO_ADDR` / `-addr` | `127.0.0.1:8080` | HTTP listen address |
 | `FOLIO_DATA` / `-data` | `data` | SQLite database, covers, and book files |
 | `FOLIO_WEB` / `-web` | `web/dist` | Built frontend directory |
-| `FOLIO_PASSWORD` | empty | Library password; empty enables trusted-network mode |
+| `FOLIO_PASSWORD` | empty | Library/setup password before creating the first owner account; empty permits trusted-network access until then |
 | `FOLIO_API_TOKEN` | empty | Optional bearer token for scripts and future clients |
 | `FOLIO_SECURE_COOKIE` | `false` | Require HTTPS for the session cookie |
 
-Password changes invalidate existing sessions. Sign-out removes the current browser's cookie. Use a strong password and HTTPS outside your trusted network; anyone with access to this single-user instance shares its library.
+Before accounts are enabled, `FOLIO_PASSWORD` protects the existing library and owner setup. Sign in with that password, then open **Library settings → Create owner account**. On installations without a configured password, owner setup is available directly from Library settings. The first account is an administrator; afterward, sign-in requires a username and account password even if `FOLIO_PASSWORD` is empty. Existing legacy cookies stop working once the first owner is created.
+
+Administrators can add users, reset another user's password, and delete accounts in Library settings. Every user can change their own password. The library, favorites, collections, reading positions, text annotations, and handwriting are shared; account preferences are personal. Deleting an account removes its preferences and sessions while keeping the shared content. There is no public registration after owner setup.
+
+Pen settings save automatically, including independent pen and highlighter thickness, the selected tool and color, and finger drawing. Reader theme, text size/page zoom, highlight color, library layout, and sort order are also saved on the server. Reopening a book or signing in on another device restores them. A failed save leaves an error and retry action visible. Cross-tab account changes cannot write the previous user's settings into the new account.
+
+Account passwords use salted PBKDF2-HMAC-SHA256 with 600,000 iterations. Account sessions use random tokens stored only as hashes in SQLite. Sign-out revokes the current account session; password changes/resets revoke the user's previous sessions. The legacy shared-password mode retains its signed-cookie behavior until accounts are enabled. `FOLIO_API_TOKEN` remains a full-access server credential; with accounts enabled it acts as an administrator and uses that administrator's preferences. Use HTTPS outside your trusted network.
+
+For owner password recovery on the Docker host, read a new password without echoing it or putting it in shell history, then pass it through stdin (replace `owner` with the username):
+
+```sh
+read -r -s -p 'New account password: ' folio_account_password
+printf '\n'
+printf '%s' "$folio_account_password" | docker compose exec -T folio /app/folio -reset-password owner
+unset folio_account_password
+```
+
+For source installations, use `./bin/folio -data /path/to/data -reset-password owner` with the new password on stdin. The command exits after resetting the password and revoking existing sessions. It can run while the server is running; no container restart is needed.
 
 ## Architecture
 
@@ -76,7 +94,7 @@ React + TypeScript web app
   ├── PDF.js: page rendering and selectable text
   └── /api/v1 JSON + multipart + HTTP range requests
         └── Go net/http server
-              ├── SQLite (WAL): metadata, collections, progress, annotations
+              ├── SQLite (WAL): accounts, sessions, preferences, metadata, progress, annotations
               └── filesystem: original books and extracted covers
 ```
 
@@ -108,7 +126,7 @@ Stop Folio before copying the **entire data directory or Docker volume**, then r
 
 ## Current scope
 
-This is an initial working release, not a complete Apple Books replacement. It has one shared library per server, online reading, and EPUB/PDF support. It does not yet include individual user accounts, offline/PWA storage, full-text search, OPDS/Calibre integration, OCR, audiobooks, DRM removal, MOBI/AZW support, or native clients. Scanned PDFs without a text layer can be read and bookmarked but cannot have text highlights. Password-encrypted PDFs are not currently supported. Original PDFs and EPUBs are unchanged; annotations are stored separately, not embedded into exported books.
+This is an initial working release, not a complete Apple Books replacement. It has one shared library per server, household accounts, online reading, and EPUB/PDF support. It does not yet include private per-user libraries, offline/PWA storage, full-text search, OPDS/Calibre integration, OCR, audiobooks, DRM removal, MOBI/AZW support, or native clients. Scanned PDFs without a text layer can be read and bookmarked but cannot have text highlights. Password-encrypted PDFs are not currently supported. Original PDFs and EPUBs are unchanged; annotations are stored separately, not embedded into exported books.
 
 Next priorities are accessibility and cross-browser hardening, larger-library indexing and pagination, offline caching, multi-user libraries and scoped tokens, then native clients using the same API. The current API is versioned but may evolve before a stable 1.0 release.
 

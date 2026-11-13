@@ -31,3 +31,5 @@ Pen tests dispatch browser Pointer Events with varying pressure and palm-like to
 
 
 The mobile reader tests use a 412×915 CSS viewport at device pixel ratio 3.5. They check the canvas pixel dimensions, density increases after CDP browser pinch zoom, bounded bitmap memory, retained text selection/ink, and the minimal toolbar's hit targets and menus. These are browser emulations, not a substitute for checking display quality and pen latency on a physical phone.
+
+Account browser tests start a separate temporary server on loopback port 8082 for each test, exercising owner setup, account switching, per-device pen preferences, retry behavior, and cross-tab profile protection. Other reader tests reset the legacy profile to default preferences before each test. Backend tests cover migration, account authorization, salted password hashes, session revocation/expiry, preference validation, concurrent partial updates, and owner recovery.

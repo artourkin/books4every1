@@ -1,10 +1,7 @@
 package server
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -15,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -75,6 +71,10 @@ func New(cfg Config) (*Server, error) {
  CREATE TABLE IF NOT EXISTS books (id TEXT PRIMARY KEY,title TEXT NOT NULL,author TEXT NOT NULL,format TEXT NOT NULL,size INTEGER NOT NULL,cover INTEGER NOT NULL DEFAULT 0,color TEXT NOT NULL,added_at TEXT NOT NULL,last_read TEXT,progress REAL NOT NULL DEFAULT 0,location TEXT NOT NULL DEFAULT '',favorite INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'unread',collection TEXT NOT NULL DEFAULT '',sample INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS annotations (id TEXT PRIMARY KEY,book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,kind TEXT NOT NULL,quote TEXT NOT NULL,note TEXT NOT NULL,color TEXT NOT NULL,anchor TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS ink_pages (book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,page INTEGER NOT NULL,revision INTEGER NOT NULL,strokes TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(book_id,page));
+ CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,admin INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at INTEGER NOT NULL);
+ CREATE INDEX IF NOT EXISTS session_user ON sessions(user_id);
+ CREATE TABLE IF NOT EXISTS preferences (user_id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS collections (name TEXT PRIMARY KEY);
  CREATE INDEX IF NOT EXISTS annotation_book ON annotations(book_id);`)
 	if err != nil {
@@ -123,14 +123,16 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "ok", "version": "0.1.0"})
 	})
-	s.mux.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, map[string]bool{"authenticated": s.authorized(r), "passwordRequired": s.cfg.Password != ""})
-	})
+	s.mux.HandleFunc("GET /api/v1/session", s.session)
 	s.mux.HandleFunc("POST /api/v1/session", s.login)
-	s.mux.HandleFunc("DELETE /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
-		http.SetCookie(w, &http.Cookie{Name: "folio_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.cfg.SecureCookie})
-		w.WriteHeader(204)
-	})
+	s.mux.HandleFunc("DELETE /api/v1/session", s.logout)
+	s.mux.HandleFunc("GET /api/v1/me/preferences", s.getPreferences)
+	s.mux.HandleFunc("PATCH /api/v1/me/preferences", s.patchPreferences)
+	s.mux.HandleFunc("POST /api/v1/me/password", s.changePassword)
+	s.mux.HandleFunc("GET /api/v1/users", s.users)
+	s.mux.HandleFunc("POST /api/v1/users", s.createUser)
+	s.mux.HandleFunc("DELETE /api/v1/users/{user}", s.deleteUser)
+	s.mux.HandleFunc("POST /api/v1/users/{user}/password", s.resetUserPassword)
 	s.mux.HandleFunc("GET /api/v1/books", s.books)
 	s.mux.HandleFunc("POST /api/v1/books", s.upload)
 	s.mux.HandleFunc("GET /api/v1/books/{id}", s.getBook)
@@ -174,52 +176,6 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.mux.ServeHTTP(w, r)
 	})
-}
-func (s *Server) authorized(r *http.Request) bool {
-	if s.cfg.APIToken != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+s.cfg.APIToken)) == 1 {
-		return true
-	}
-	if s.cfg.Password == "" {
-		return true
-	}
-	c, e := r.Cookie("folio_session")
-	if e != nil {
-		return false
-	}
-	parts := strings.Split(c.Value, ".")
-	if len(parts) != 2 {
-		return false
-	}
-	expires, e := strconv.ParseInt(parts[0], 10, 64)
-	return e == nil && expires > time.Now().Unix() && hmac.Equal([]byte(parts[1]), []byte(s.signature(parts[0])))
-}
-func (s *Server) signature(v string) string {
-	h := hmac.New(sha256.New, []byte(s.cfg.Password))
-	h.Write([]byte("folio-session:" + v))
-	return hex.EncodeToString(h.Sum(nil))
-}
-func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	select {
-	case s.attempts <- struct{}{}:
-	default:
-		fail(w, 429, "Too many sign-in attempts. Try again shortly.")
-		return
-	}
-	defer func() { time.AfterFunc(time.Second, func() { <-s.attempts }) }()
-	var body struct {
-		Password string `json:"password"`
-	}
-	if !decode(w, r, &body) {
-		return
-	}
-	a, b := sha256.Sum256([]byte(body.Password)), sha256.Sum256([]byte(s.cfg.Password))
-	if subtle.ConstantTimeCompare(a[:], b[:]) != 1 {
-		fail(w, 401, "That password isn't right")
-		return
-	}
-	exp := strconv.FormatInt(time.Now().Add(30*24*time.Hour).Unix(), 10)
-	http.SetCookie(w, &http.Cookie{Name: "folio_session", Value: exp + "." + s.signature(exp), Path: "/", MaxAge: 30 * 24 * 3600, HttpOnly: true, Secure: s.cfg.SecureCookie, SameSite: http.SameSiteStrictMode})
-	respond(w, 200, map[string]bool{"authenticated": true})
 }
 
 type scanner interface{ Scan(...any) error }
