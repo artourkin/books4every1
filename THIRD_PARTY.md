@@ -9,6 +9,7 @@ Folio's original source is AGPL-3.0-only. Dependencies retain their own licenses
 | PDF.js / pdfjs-dist | Apache-2.0 | PDF rendering, font maps, decoders; selectable-text styles adapted from PDF.js |
 | modernc.org/sqlite | BSD-3-Clause (SQLite core is public domain) | Embedded database |
 | Lucide | ISC | Icons |
+| perfect-freehand | MIT | Pressure-sensitive stroke outlines |
 | DM Sans | SIL Open Font License 1.1 | Locally bundled interface font |
 | Libre Caslon Display | SIL Open Font License 1.1 | Locally bundled display font |
 | @xmldom/xmldom | MIT | EPUB XML dependency |
