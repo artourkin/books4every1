@@ -1,3 +1,6 @@
+import { ReaderMenu } from "./ReaderMenu";
+import { pdfOutputScale, usePDFDisplayScale } from "./pdfRendering";
+import "./reader.css";
 import { PDFInkLayer } from "./PDFInkLayer";
 import { PDFInkToolbar } from "./PDFInkToolbar";
 import { usePDFInk } from "./usePDFInk";
@@ -12,12 +15,9 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
-  Bookmark,
+  MoreHorizontal,
   NotebookPen,
-  List,
   X,
-  Sun,
-  Moon,
   Minus,
   Plus,
   Check,
@@ -99,10 +99,43 @@ export function Reader({
     [drawWithTouch, setDrawWithTouch] = useState(false),
     [inkBusy, setInkBusy] = useState(false),
     [pdfSize, setPdfSize] = useState<PageSize>({ width: 612, height: 792 });
+  const [popover, setPopover] = useState<"reader" | "ink" | null>(null);
+  const displayScale = usePDFDisplayScale();
+  const renderedLayout = useRef("");
+  const renderedPDFPage = useRef<number | null>(null);
+  useDialogFocus(popover !== null, ".reader-popover");
+  useEffect(() => {
+    if (!popover) return;
+    const outside = (event: PointerEvent) => {
+      if (
+        !(event.target as Element)?.closest(
+          ".reader-popover,[data-reader-popover-trigger]",
+        )
+      )
+        setPopover(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setPopover(null);
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [popover]);
+  const openPanel = (next: "notes" | "contents") => {
+    setPopover(null);
+    setPanel(next);
+  };
   const ink = usePDFInk(book.id, page, book.format === "PDF");
   const inkWidth = inkTool === "highlighter" ? markerWidth : penWidth;
   const changeInkMode = (enabled: boolean) => {
     setInkEnabled(enabled);
+    setPopover(null);
     setSelection(null);
     window.getSelection()?.removeAllRanges();
   };
@@ -297,73 +330,103 @@ export function Reader({
     if (book.format !== "PDF") return;
     const node = mount.current;
     if (!node) return;
-    const observer = new ResizeObserver((entries) =>
-      setPdfWidth(Math.min(850, entries[0].contentRect.width - 48)),
-    );
+    const observer = new ResizeObserver((entries) => {
+      // contentRect already excludes padding; subtracting it again shrinks the page.
+      setPdfWidth(Math.max(1, Math.min(1000, entries[0].contentRect.width)));
+    });
     observer.observe(node);
     return () => observer.disconnect();
   }, [book.format]);
   useEffect(() => {
     if (!pdfReady || !pdf.current || !canvas.current || !textLayer.current)
       return;
-    let disposed = false;
-    let renderTask: pdfjs.RenderTask | undefined;
-    let layer: pdfjs.TextLayer | undefined;
+    let disposed = false,
+      renderTask: pdfjs.RenderTask | undefined,
+      layer: pdfjs.TextLayer | undefined;
+    const bitmap = document.createElement("canvas");
     const render = async () => {
-      setLoading(true);
+      const differentPage = renderedPDFPage.current !== page;
+      if (differentPage) setLoading(true);
       try {
-        const p = await pdf.current!.getPage(page);
+        const document = pdf.current!,
+          p = await document.getPage(page);
         if (disposed) return;
         const initial = p.getViewport({ scale: 1 });
-        setPdfSize({ width: initial.width, height: initial.height });
         const scale =
-          Math.max(0.3, pdfWidth / initial.width) * (fontSize / 100);
+          Math.max(0.05, pdfWidth / initial.width) * (fontSize / 100);
         const viewport = p.getViewport({ scale });
-        const c = canvas.current!;
-        const dpr = window.devicePixelRatio || 1;
-        c.width = Math.floor(viewport.width * dpr);
-        c.height = Math.floor(viewport.height * dpr);
-        c.style.width = viewport.width + "px";
-        c.style.height = viewport.height + "px";
-        pdfPage.current!.style.width = viewport.width + "px";
-        pdfPage.current!.style.height = viewport.height + "px";
-        const context = c.getContext("2d")!;
+        const layoutKey = `${page}:${viewport.width}:${viewport.height}`;
+        if (renderedLayout.current !== layoutKey) setLoading(true);
+        const outputScale = pdfOutputScale(
+          viewport.width,
+          viewport.height,
+          displayScale,
+        );
+        bitmap.width = Math.max(
+          1,
+          Math.floor(viewport.width * outputScale + 1e-6),
+        );
+        bitmap.height = Math.max(
+          1,
+          Math.floor(viewport.height * outputScale + 1e-6),
+        );
         renderTask = p.render({
-          canvas: c,
-          canvasContext: context,
+          canvas: bitmap,
+          canvasContext: bitmap.getContext("2d")!,
           viewport,
-          transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
+          transform: [outputScale, 0, 0, outputScale, 0, 0],
         });
         await renderTask.promise;
         if (disposed) return;
-        const content = await p.getTextContent();
-        if (disposed) return;
-        textLayer.current!.replaceChildren();
-        textLayer.current!.style.setProperty(
-          "--total-scale-factor",
-          String(scale),
+        // A density-only refresh preserves text selection and the existing ink geometry.
+        if (renderedLayout.current !== layoutKey) {
+          const content = await p.getTextContent();
+          if (disposed) return;
+          textLayer.current!.replaceChildren();
+          textLayer.current!.style.setProperty(
+            "--total-scale-factor",
+            String(scale),
+          );
+          textLayer.current!.style.setProperty("--scale-round-x", "1px");
+          textLayer.current!.style.setProperty("--scale-round-y", "1px");
+          layer = new pdfjs.TextLayer({
+            textContentSource: content,
+            container: textLayer.current!,
+            viewport,
+          });
+          await layer.render();
+          if (disposed) return;
+          renderedLayout.current = layoutKey;
+        }
+        const c = canvas.current!;
+        c.width = bitmap.width;
+        c.height = bitmap.height;
+        c.style.width = viewport.width + "px";
+        c.style.height = viewport.height + "px";
+        c.getContext("2d")!.drawImage(bitmap, 0, 0);
+        c.dataset.renderScale = String(outputScale);
+        pdfPage.current!.style.width = viewport.width + "px";
+        pdfPage.current!.style.height = viewport.height + "px";
+        setPdfSize((previous) =>
+          previous.width === initial.width && previous.height === initial.height
+            ? previous
+            : { width: initial.width, height: initial.height },
         );
-        textLayer.current!.style.setProperty("--scale-round-x", "1px");
-        textLayer.current!.style.setProperty("--scale-round-y", "1px");
-        layer = new pdfjs.TextLayer({
-          textContentSource: content,
-          container: textLayer.current!,
-          viewport,
-        });
-        await layer.render();
-        if (disposed) return;
+        renderedPDFPage.current = page;
         setLoading(false);
-        remember(
-          String(page),
-          pdf.current!.numPages === 1
-            ? 1
-            : (page - 1) / (pdf.current!.numPages - 1),
-        );
+        if (differentPage)
+          remember(
+            String(page),
+            document.numPages === 1 ? 1 : (page - 1) / (document.numPages - 1),
+          );
       } catch (e) {
         if (!disposed) {
           setError((e as Error).message);
           setLoading(false);
         }
+      } finally {
+        bitmap.width = 0;
+        bitmap.height = 0;
       }
     };
     void render();
@@ -372,7 +435,7 @@ export function Reader({
       renderTask?.cancel();
       layer?.cancel();
     };
-  }, [page, pdfReady, pdfWidth, fontSize, remember]);
+  }, [page, pdfReady, pdfWidth, fontSize, displayScale, remember]);
   useEffect(() => {
     const r = rendition.current;
     if (!r) return;
@@ -523,87 +586,61 @@ export function Reader({
   return (
     <div className={`reader theme-${theme}`}>
       <header className="reader-header">
-        <button className="back-library" onClick={() => void close()}>
-          <ArrowLeft size={17} />
-          <span>Library</span>
+        <button
+          className="back-library icon"
+          aria-label="Library"
+          title="Back to library"
+          onClick={() => void close()}
+        >
+          <ArrowLeft size={20} />
         </button>
         <div className="reader-book-name">
-          <strong>{book.title}</strong>
-          <span>
-            {book.author}
-            {book.sample ? " · Sample excerpt" : ""}
-          </span>
+          <strong title={book.title}>{book.title}</strong>
         </div>
         <div className="reader-tools">
           {book.format === "PDF" && (
             <button
-              className={`icon ${inkEnabled ? "active" : ""}`}
-              aria-label="Draw on PDF"
+              className={`reader-write-toggle ${inkEnabled ? "active" : ""}`}
+              aria-label={inkEnabled ? "Finish writing" : "Draw on PDF"}
               aria-pressed={inkEnabled}
               onClick={() => changeInkMode(!inkEnabled)}
               disabled={loading || inkBusy}
             >
-              <PenLine size={19} />
+              {inkEnabled ? <Check size={18} /> : <PenLine size={18} />}
+              <span>{inkEnabled ? "Done" : "Write"}</span>
             </button>
           )}
           <button
-            className={`icon ${panel === "contents" ? "active" : ""}`}
-            aria-label="Table of contents"
-            onClick={() => setPanel(panel === "contents" ? null : "contents")}
-          >
-            <List size={20} />
-          </button>
-          <button
             className="icon"
-            aria-label="Bookmark this page"
-            onClick={() => void add("bookmark")}
-            disabled={loading || saving}
+            aria-label="Reader options"
+            aria-expanded={popover === "reader"}
+            aria-controls="reader-options"
+            data-reader-popover-trigger
+            onClick={() => setPopover(popover === "reader" ? null : "reader")}
+            disabled={inkBusy}
           >
-            <Bookmark size={19} />
-          </button>
-          <button
-            className={`icon ${panel === "notes" ? "active" : ""}`}
-            aria-label="Notes and highlights"
-            onClick={() => setPanel(panel === "notes" ? null : "notes")}
-          >
-            <NotebookPen size={20} />
-            <span className="tool-count">{notes.length || ""}</span>
-          </button>
-          <span className="tool-divider" />
-          <button
-            className="icon"
-            aria-label="Decrease text size"
-            onClick={() => setFontSize((s) => Math.max(70, s - 10))}
-            disabled={fontSize <= 70}
-          >
-            <Minus size={16} />
-          </button>
-          <span className="font-value">Aa</span>
-          <button
-            className="icon"
-            aria-label="Increase text size"
-            onClick={() => setFontSize((s) => Math.min(180, s + 10))}
-            disabled={fontSize >= 180}
-          >
-            <Plus size={16} />
-          </button>
-          <button
-            className="icon"
-            aria-label={
-              theme === "night" ? "Use paper theme" : "Use dark theme"
-            }
-            onClick={() => setTheme(theme === "night" ? "paper" : "night")}
-          >
-            {theme === "night" ? <Sun size={19} /> : <Moon size={19} />}
+            <MoreHorizontal size={21} />
           </button>
         </div>
+        {popover === "reader" && (
+          <ReaderMenu
+            format={book.format}
+            fontSize={fontSize}
+            onFontSize={setFontSize}
+            theme={theme}
+            onTheme={() => setTheme(theme === "night" ? "paper" : "night")}
+            onPanel={openPanel}
+            onBookmark={() => void add("bookmark")}
+            bookmarkDisabled={loading || saving}
+            onClose={() => setPopover(null)}
+          />
+        )}
       </header>
       {book.format === "PDF" && (
         <PDFInkToolbar
           ink={ink}
           page={page}
           enabled={inkEnabled}
-          onEnabled={changeInkMode}
           tool={inkTool}
           onTool={setInkTool}
           color={inkColor}
@@ -614,15 +651,13 @@ export function Reader({
           onTouch={setDrawWithTouch}
           busy={inkBusy}
           onReviewPage={setPage}
+          optionsOpen={popover === "ink"}
+          onOptions={() => setPopover(popover === "ink" ? null : "ink")}
+          onCloseOptions={() => setPopover(null)}
         />
       )}
       <div className="reader-layout">
         <div className="reading-area">
-          <div className="reader-chapter-label">
-            {book.format === "PDF"
-              ? `PAGE ${page} OF ${pages || "…"}`
-              : chapter || "SETTLE INTO A STORY"}
-          </div>
           <div
             className={`reader-document ${book.format === "PDF" ? "pdf-document" : "epub-document"}`}
             ref={mount}
@@ -713,35 +748,35 @@ export function Reader({
           )}
           <footer className="reader-footer">
             <button
-              className="secondary"
+              className="icon"
               aria-label="Previous page"
               onClick={() => move(-1)}
               disabled={loading || (book.format === "PDF" && page <= 1)}
             >
-              <ChevronLeft size={19} />
-              <span>Previous</span>
+              <ChevronLeft size={20} />
             </button>
             <div className="reader-progress">
-              <span>{Math.round(progress * 100)}% through your book</span>
-              <div className="progress-track">
-                <i style={{ width: `${progress * 100}%` }} />
-              </div>
+              {book.format === "PDF" ? (
+                <button
+                  className="reader-page-position"
+                  aria-label={`Go to page, page ${page} of ${pages || 0}`}
+                  onClick={() => openPanel("contents")}
+                >
+                  {page} / {pages || "…"}
+                </button>
+              ) : (
+                <span>{Math.round(progress * 100)}%</span>
+              )}
             </div>
             <button
-              className="secondary"
+              className="icon"
               aria-label="Next page"
               onClick={() => move(1)}
               disabled={loading || (book.format === "PDF" && page >= pages)}
             >
-              <span>Next</span>
-              <ChevronRight size={19} />
+              <ChevronRight size={20} />
             </button>
           </footer>
-          <div className="reader-hint">
-            {inkEnabled
-              ? "Write with a pen or mouse. Drag with a finger to scroll; enable finger drawing to sketch by touch."
-              : "Select a passage to highlight it or leave a thought."}
-          </div>
         </div>
         {panel && (
           <aside className="reader-panel">

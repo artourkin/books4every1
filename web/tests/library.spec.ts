@@ -100,17 +100,21 @@ test("EPUB reading, text highlights, notes, bookmarks and resume", async ({
   await expect(
     page.getByText("Make more time for slow mornings.", { exact: true }),
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Reader options", exact: true })
+    .click();
   await page.getByRole("button", { name: "Bookmark this page" }).click();
   await expect(page.locator(".panel-notes .note-card")).toHaveCount(2);
   await page.getByRole("button", { name: "Close reader panel" }).click();
+  await page
+    .getByRole("button", { name: "Reader options", exact: true })
+    .click();
   await page.getByRole("button", { name: "Use dark theme" }).click();
   await expect(page.locator(".reader")).toHaveClass(/theme-night/);
   await page.getByRole("button", { name: "Use paper theme" }).click();
   await page.getByRole("button", { name: "Next page", exact: true }).click();
   // EPUB page turns relocate asynchronously after the click handler returns.
-  await expect(page.locator(".reader-progress > span")).not.toHaveText(
-    "0% through your book",
-  );
+  await expect(page.locator(".reader-progress > span")).not.toHaveText("0%");
   await page.getByRole("button", { name: "Library", exact: true }).click();
   const saved = (await (await request.get("/api/v1/books")).json()).find(
     (b: { title: string }) => b.title === "Walden",
@@ -120,6 +124,9 @@ test("EPUB reading, text highlights, notes, bookmarks and resume", async ({
   await page.reload();
   await page.getByRole("button", { name: "Read Walden", exact: true }).click();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Reader options", exact: true })
+    .click();
   await page.getByRole("button", { name: "Notes and highlights" }).click();
   await expect(page.locator(".panel-notes .note-card")).toHaveCount(2);
   await page.getByRole("button", { name: "Library", exact: true }).click();
@@ -171,13 +178,17 @@ test("PDF upload, rendered text selection, persisted highlights, page navigation
   await expect(page.locator(".pdf-highlight")).toHaveCount(1);
   await page.getByRole("button", { name: "Close reader panel" }).click();
   await page.getByRole("button", { name: "Next page", exact: true }).click();
-  await expect(page.getByText("PAGE 2 OF 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Go to page, page 2 of 2", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await page
     .getByRole("button", { name: "Read reading-notes", exact: true })
     .click();
-  await expect(page.getByText("PAGE 2 OF 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Go to page, page 2 of 2", exact: true }),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Previous page", exact: true })
     .click();
