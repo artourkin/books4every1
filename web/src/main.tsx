@@ -342,7 +342,12 @@ function App() {
       >
         <Reader
           book={active}
-          onClose={() => {
+          onClose={(updated) => {
+            // Resume immediately from the saved position while the library refreshes.
+            if (updated)
+              setBooks((all) =>
+                all.map((book) => (book.id === updated.id ? updated : book)),
+              );
             setActive(null);
             void refresh();
           }}

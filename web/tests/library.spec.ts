@@ -184,13 +184,29 @@ test("PDF upload, rendered text selection, persisted highlights, page navigation
     page.getByRole("button", { name: "Go to page, page 2 of 2", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
-  await page.getByRole("button", { name: "Library", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Read reading-notes", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Go to page, page 2 of 2", exact: true }),
-  ).toBeVisible();
+  let releaseRefresh!: () => void;
+  const delayedRefresh = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  await page.route("**/api/v1/books", async (route) => {
+    if (route.request().method() === "GET") await delayedRefresh;
+    await route.continue();
+  });
+  try {
+    await page.getByRole("button", { name: "Library", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Read reading-notes", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", {
+        name: "Go to page, page 2 of 2",
+        exact: true,
+      }),
+    ).toBeVisible();
+  } finally {
+    releaseRefresh();
+    await page.unrouteAll({ behavior: "wait" });
+  }
   await page
     .getByRole("button", { name: "Previous page", exact: true })
     .click();
