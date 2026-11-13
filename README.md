@@ -9,7 +9,7 @@ Folio is a web-first, single-user reader for **DRM-free EPUB and PDF** files. Yo
 ## What works today
 
 - Upload multiple EPUBs and PDFs, with drag and drop and a 100 MiB per-file limit.
-- Read paginated EPUBs and PDFs with selectable text, bookmarks, font/zoom controls, a dark theme, and saved reading positions.
+- Read paginated EPUBs and PDFs with selectable text, bookmarks, font/zoom controls, a dark theme, and saved reading positions. Focus/fullscreen mode gives the page more room, with reachable controls even while pinch-zoomed.
 - Write on PDFs with a pressure-sensitive pen, translucent highlighter, stroke eraser, colors, thickness controls, and undo/redo. Ink saves automatically and scales with the page.
 - Highlight passages in four colors, add and edit notes, jump back to passages, and export your notebook as Markdown.
 - Organize books into collections, save favorites, update titles/authors, and track reading status.
@@ -90,11 +90,13 @@ See [API documentation](docs/API.md) for requests and annotation formats, and [c
 
 Open a PDF and tap the **Write** button. The floating dock keeps the drawing tool, whole-stroke eraser, undo, and **Pen options** within reach. Pen options contains the pen/highlighter choice, color, thickness, finger drawing, and redo. Tap **Done** to return to text selection. `Ctrl/Cmd Z`, `Ctrl/Cmd Shift Z`, and `Ctrl Y` also work while writing. Histories are per page and last for the current reading session.
 
-The header's **More** button contains navigation, notes, bookmarks, page zoom/text size, and appearance. Tap the page number to jump to another page. Saving indicators appear only while loading/saving; errors and recovery actions stay visible until resolved.
+The header's **More** button contains navigation, notes, bookmarks, page zoom/text size, appearance, and **Focus / fullscreen**. Focus mode removes the header, footer, and PDF side gutters; supported browsers also hide browser chrome. If fullscreen is unavailable or declined, focus mode still works inside the browser. Idle reading controls collapse to a small **More** button after a few seconds. Tap it to reveal page navigation, writing, and **Back to library**; choose **Exit fullscreen / Exit focus mode** to return. Use Escape or the browser's fullscreen exit to restore the normal reader.
+
+While pinch-zoomed, page navigation, menus, and writing tools follow the visible part of the screen and retain their touch-target size. Use the arrows to turn pages without zooming out, or tap the page number to jump. A PDF page turn starts at the new page's top-left while keeping magnification. Browsers such as Chromium disable browser pinch zoom in native fullscreen; use **Page zoom** in More in that case. Navigation stays visible while zoomed or writing; an active pen stroke blocks page turns. Saving indicators appear only while loading/saving; errors and recovery actions stay visible until resolved.
 
 Phone PDFs use a 2048-pixel-wide raster baseline where the page's shape permits it. The renderer responds to device pixel density and refreshes after browser pinch zoom, with a 16-megapixel/8192-pixel-side canvas limit to bound memory. Resolution-only refreshes retain the visible bitmap until its replacement is ready and preserve text selection and vector ink. This improves rendering detail; it does not add information to a low-resolution image embedded in an original PDF.
 
-Pens and mice can draw immediately. Fingers drag the document to scroll; enable **Finger drawing** in pen options to sketch with touch. Touches during an active pen stroke and shortly afterward are ignored to reduce accidental palm marks. Initial handwriting has been user-tested on a Galaxy S25 Ultra. Pressure, palm rejection, latency, and other devices/browser combinations still need device testing.
+Pens and mice can draw immediately. Fingers drag the document to scroll; enable **Finger drawing** in pen options to sketch with touch. Touches during an active pen stroke and shortly afterward are ignored to reduce accidental palm marks. Initial handwriting has been user-tested on a Galaxy S25 Ultra. Focus/fullscreen and zoomed navigation are covered by Chromium phone emulation; these additions still need physical-device testing. Pressure, palm rejection, latency, and other devices/browser combinations still need device testing.
 
 Writes are serialized per page, including when you turn pages while a save is in flight. Failed saves leave strokes visible and offer retry and a JSON recovery copy. A stale tab is stopped with a revision-conflict message instead of overwriting newer ink; download its recovery copy before reloading the saved page. Leaving the reader waits for pending saves, and closing/reloading the tab warns about unsaved changes. Keep the tab open until a save succeeds or you have downloaded a copy.
 

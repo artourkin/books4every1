@@ -7,6 +7,11 @@ import {
   Minus,
   Plus,
   X,
+  Maximize,
+  Minimize,
+  PenLine,
+  Check,
+  ArrowLeft,
 } from "lucide-react";
 export function ReaderMenu({
   format,
@@ -18,6 +23,13 @@ export function ReaderMenu({
   onBookmark,
   bookmarkDisabled,
   onClose,
+  focused,
+  nativeFullscreen,
+  onFocus,
+  floating,
+  inkEnabled,
+  onInkMode,
+  onLibrary,
 }: {
   format: "PDF" | "EPUB";
   fontSize: number;
@@ -28,6 +40,13 @@ export function ReaderMenu({
   onBookmark: () => void;
   bookmarkDisabled: boolean;
   onClose: () => void;
+  focused: boolean;
+  nativeFullscreen: boolean;
+  onFocus: () => void;
+  floating: boolean;
+  inkEnabled: boolean;
+  onInkMode: () => void;
+  onLibrary: () => void;
 }) {
   return (
     <section
@@ -46,6 +65,38 @@ export function ReaderMenu({
           <X size={18} />
         </button>
       </div>
+      <button
+        className="popover-action"
+        aria-label={focused ? "Exit focus mode" : "Enter fullscreen"}
+        onClick={onFocus}
+      >
+        {focused ? <Minimize size={18} /> : <Maximize size={18} />}{" "}
+        {focused
+          ? nativeFullscreen
+            ? "Exit fullscreen"
+            : "Exit focus mode"
+          : "Focus / fullscreen"}
+      </button>
+      {floating && format === "PDF" && (
+        <button
+          className="popover-action"
+          aria-label={inkEnabled ? "Finish writing" : "Draw on PDF"}
+          onClick={onInkMode}
+        >
+          {inkEnabled ? <Check size={18} /> : <PenLine size={18} />}{" "}
+          {inkEnabled ? "Done writing" : "Write on this PDF"}
+        </button>
+      )}
+      {floating && (
+        <button
+          className="popover-action"
+          aria-label="Library"
+          onClick={onLibrary}
+        >
+          <ArrowLeft size={18} />
+          Back to library
+        </button>
+      )}
       <button className="popover-action" onClick={() => onPanel("contents")}>
         <List size={18} />{" "}
         {format === "PDF" ? "Pages & navigation" : "Table of contents"}
