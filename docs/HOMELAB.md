@@ -4,10 +4,10 @@ Run these steps in an SSH session on your Docker host. You need Bash, Git, curl,
 
 ## Install
 
-Choose the version to deploy. The current PDF handwriting version is on `feat/pdf-ink`; `main` contains the original reader until that pull request is merged.
+Use `main` for the current app, including PDF handwriting. To test an unmerged pull request, replace `main` with its feature branch and switch back to `main` after the PR is merged.
 
 ```sh
-git clone --branch feat/pdf-ink https://github.com/artourkin/books4every1.git folio
+git clone --branch main https://github.com/artourkin/books4every1.git folio
 cd folio
 ./scripts/install-homelab.sh --port 8123
 ```
@@ -42,7 +42,9 @@ The external host port is configured by `FOLIO_PORT`. The Go server continues li
 
 ```sh
 docker compose logs --tail=50 folio
-# Pull updates from your selected branch, rebuild, and restart:
+# Pull merged updates, rebuild, and restart (also switches older pen-branch checkouts):
+git fetch origin
+git switch main
 git pull --ff-only
 docker compose up -d --build
 ```
