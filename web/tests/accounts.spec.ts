@@ -239,7 +239,7 @@ test("failed preference saves stay visible and retry persists the latest selecti
     }),
   );
   await page.getByLabel("Ink thickness").selectOption("8");
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(page.locator(".preferences-error")).toContainText(
     "Your preferences have not saved",
   );
   await page.getByRole("button", { name: "Amber ink" }).click();
@@ -280,7 +280,7 @@ test("an account switch in another tab cannot save one users settings into anoth
   await other.getByRole("button", { name: "Open my library" }).click();
   await expect(other.locator(".app")).toBeVisible();
   await page.getByLabel("Ink thickness").selectOption("8");
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(page.locator(".preferences-error")).toContainText(
     "account changed in another tab",
   );
   const prefs = await (
