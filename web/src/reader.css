@@ -738,3 +738,121 @@
   max-height: calc(100dvh - 200px);
   overflow: auto;
 }
+
+/* Browser pinch zoom shrinks the visual viewport. This portal counter-scales
+   only controls, leaving the document and its ink at the user's magnification. */
+.reader-viewport-ui {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  z-index: 30;
+  pointer-events: none;
+}
+.reader-viewport-ui > *,
+.reader-viewport-ui .ink-toolbar,
+.reader-viewport-ui .ink-save-state:not(.sr-only) {
+  pointer-events: auto;
+}
+.reader-viewport-ui .reader-panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+  z-index: 40;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.reader-viewport-ui .reader-menu {
+  top: auto;
+  bottom: calc(70px + env(safe-area-inset-bottom));
+  right: max(12px, env(safe-area-inset-right));
+  max-height: calc(
+    var(--reader-viewport-height) - 90px - env(safe-area-inset-bottom)
+  );
+  overflow: auto;
+  z-index: 50;
+}
+.reader-viewport-ui .pen-options {
+  max-height: calc(
+    var(--reader-viewport-height) - 200px - env(safe-area-inset-bottom)
+  );
+  overflow: auto;
+}
+.reader-viewport-ui .reader-popover {
+  max-width: calc(var(--reader-viewport-width) - 24px);
+}
+.reader-viewport-ui .selection-overlay {
+  position: absolute;
+  overflow: auto;
+}
+.reader-viewport-ui .selection-card {
+  max-height: 100%;
+  overflow: auto;
+}
+.reader-floating-navigation {
+  position: absolute;
+  left: 50%;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--reader-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 4px 20px #28351c14;
+  z-index: 20;
+}
+.reader-floating-navigation > button {
+  padding: 0;
+  justify-content: center;
+}
+.reader-focus-reveal {
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  border: 1px solid var(--border);
+  background: var(--reader-bg);
+  box-shadow: 0 2px 12px #28351c14;
+}
+.reader-zoomed .reader-header,
+.reader-zoomed .reader-footer {
+  visibility: hidden;
+}
+.reader-focused .reader-header,
+.reader-focused .reader-footer {
+  display: none;
+}
+.reader-focused .pdf-document {
+  padding: 0 0 130px;
+  scroll-padding: 0;
+}
+.reader-focused .pdf-page {
+  box-shadow: none;
+}
+.reader-focused .epub-document {
+  padding: max(8px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+}
+.reader-focused .reader-loading {
+  inset: 0;
+}
+.reader-focused .ink-save-state,
+.reader-zoomed .ink-save-state {
+  top: max(8px, env(safe-area-inset-top));
+}
+.reader-viewport-ui .reader-error {
+  bottom: calc(140px + env(safe-area-inset-bottom));
+  max-height: calc(var(--reader-viewport-height) - 160px);
+  overflow: auto;
+  z-index: 60;
+}
+.reader:fullscreen {
+  width: 100%;
+  height: 100dvh;
+}
+.reader:focus {
+  outline: none;
+}
