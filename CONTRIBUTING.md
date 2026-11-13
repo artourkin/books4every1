@@ -19,10 +19,12 @@ cd web
 npm run test:e2e
 ```
 
-The browser tests start an isolated Go server on port 8081 with a temporary data directory. They test library organization, EPUB reading and highlights, PDF upload/rendering/highlights, persistence on reopening, export, mobile layout, and upload errors. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use an existing Chromium executable. Go integration tests use temporary directories and HTTP servers.
+The browser tests start an isolated Go server on port 8081 with a temporary data directory. They test library organization, EPUB reading and highlights, PDF upload/rendering/highlights, persistence on reopening, export, mobile layout, upload errors, pressure events, ink erasing/undo/redo, stale-tab conflicts, and save recovery. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use an existing Chromium executable. Go integration tests use temporary directories and HTTP servers.
 
 Format Go with `gofmt -w cmd internal`. Run `npm run format` in `web/` for the frontend. Keep API and annotation changes documented in docs/API.md so other clients can implement them. Include meaningful tests for changes to persistence, imports, authentication, or reading behavior.
 
 The EPUB.js dependency uses an npm override for its XML parser because the upstream version range selects a vulnerable older release. Preserve that override until the upstream dependency is updated. Run `npm audit --omit=dev` when updating dependencies.
 
 Contributions are licensed under AGPL-3.0-only. Please avoid committing personal books, databases, passwords, or generated reader assets. The PDF test fixture contains original text authored for Folio and is covered by the repository license.
+
+Pen tests dispatch browser Pointer Events with varying pressure and palm-like touch sequences. They verify application behavior, not physical stylus latency or OS palm rejection. Please test on actual iPad Safari/Apple Pencil and other pen hardware before claiming device compatibility.

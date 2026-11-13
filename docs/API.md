@@ -93,3 +93,47 @@ A PDF highlight:
 ```
 
 PDF rectangle coordinates are fractions of the displayed, default-rotation page bounds, with `(0,0)` at the top-left. Render at any scale by multiplying by page width/height. A bookmark uses `anchor: {"page":3}` or `anchor:{"cfi":"epubcfi(...)"}`. Annotations are separate database records and do not modify original book bytes.
+
+
+## PDF handwriting
+
+Handwriting has its own page storage, separate from text annotations. `GET /books/{id}/ink/{page}` returns:
+
+```json
+{
+  "page": 1,
+  "revision": 0,
+  "strokes": [],
+  "updatedAt": null
+}
+```
+
+A page with no stored ink has revision zero. Page numbers are 1-based. These endpoints accept PDFs only and use the same authentication and origin checks as other library APIs.
+
+To save a page, `PUT /books/{id}/ink/{page}` with the last observed revision and the complete desired stroke list:
+
+```json
+{
+  "revision": 0,
+  "strokes": [
+    {
+      "id": "4511fe4f-0542-41ea-a299-1e2765e763cb",
+      "tool": "pen",
+      "color": "#394137",
+      "width": 0.005,
+      "points": [
+        { "x": 0.1, "y": 0.2, "pressure": 0.35 },
+        { "x": 0.4, "y": 0.3, "pressure": 0.8 }
+      ]
+    }
+  ]
+}
+```
+
+A successful save returns the page with an incremented revision and UTC `updatedAt`. The revision check and write happen in one transaction. A stale write returns **409** with `error` and `currentRevision`; it never replaces the saved page. Re-read the page and explicitly reconcile/discard local changes before retrying. Clearing a page uses an empty stroke array and retains its incremented revision to prevent resurrection by stale clients. Deleting a book also deletes its ink pages. Existing databases receive the new table automatically on startup; no book conversion is needed.
+
+Coordinates `x`/`y` are normalized to `[0,1]` in the displayed PDF page's default rotation, top-left origin. `width` is a fraction of the page width, between `0.0002` and `0.1`. Re-render by multiplying x/width by page width and y by page height, preserving pressure values in `[0,1]`. The web client creates outlines with perfect-freehand: pressure thinning 0.45 for pen, constant width for highlighter, smoothing 0.6, streamline 0.35, simulated pressure disabled. Highlighter opacity is 0.3. Other clients can draw their own outlines from the same points.
+
+Tool is `pen` or `highlighter`; colors must be six-digit hex (`#RRGGBB`). Stroke IDs are unique within a page and contain 1–64 ASCII letters, digits, `_`, or `-`. Each stroke contains 1–10,000 points. Limits per page: 5,000 strokes, 200,000 total points, and a 16 MiB request body. Invalid ink returns 400. The API does not parse the PDF to verify the supplied page exists; clients must use the PDF document's page count.
+
+The recovery download is `{ "format": "folio-ink-v1", "page": 1, "strokes": [...] }`. To restore it using another client, read the current page revision, review the stroke list, and PUT its `strokes` with that revision. Do not send `format` or `page` in the PUT body. Handwriting is not yet embedded in downloaded PDF bytes or included in the Markdown notebook export.

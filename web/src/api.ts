@@ -30,6 +30,15 @@ export type Annotation = {
   anchor: Anchor;
   createdAt: string;
 };
+export class APIError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+    this.name = "APIError";
+  }
+}
 export async function api<T>(
   path: string,
   options: RequestInit = {},
@@ -48,7 +57,7 @@ export async function api<T>(
     try {
       message = (await response.json()).error || message;
     } catch {}
-    throw new Error(message);
+    throw new APIError(message, response.status);
   }
   return response.status === 204 ? (undefined as T) : response.json();
 }

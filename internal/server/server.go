@@ -74,6 +74,7 @@ func New(cfg Config) (*Server, error) {
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS books (id TEXT PRIMARY KEY,title TEXT NOT NULL,author TEXT NOT NULL,format TEXT NOT NULL,size INTEGER NOT NULL,cover INTEGER NOT NULL DEFAULT 0,color TEXT NOT NULL,added_at TEXT NOT NULL,last_read TEXT,progress REAL NOT NULL DEFAULT 0,location TEXT NOT NULL DEFAULT '',favorite INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'unread',collection TEXT NOT NULL DEFAULT '',sample INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS annotations (id TEXT PRIMARY KEY,book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,kind TEXT NOT NULL,quote TEXT NOT NULL,note TEXT NOT NULL,color TEXT NOT NULL,anchor TEXT NOT NULL,created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS ink_pages (book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,page INTEGER NOT NULL,revision INTEGER NOT NULL,strokes TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(book_id,page));
  CREATE TABLE IF NOT EXISTS collections (name TEXT PRIMARY KEY);
  CREATE INDEX IF NOT EXISTS annotation_book ON annotations(book_id);`)
 	if err != nil {
@@ -102,7 +103,10 @@ func fail(w http.ResponseWriter, status int, message string) {
 	respond(w, status, map[string]string{"error": message})
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	return decodeSized(w, r, v, 1<<20)
+}
+func decodeSized(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
@@ -134,6 +138,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/v1/books/{id}", s.deleteBook)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/file", s.file)
 	s.mux.HandleFunc("GET /api/v1/books/{id}/cover", s.cover)
+	s.mux.HandleFunc("GET /api/v1/books/{id}/ink/{page}", s.getInk)
+	s.mux.HandleFunc("PUT /api/v1/books/{id}/ink/{page}", s.putInk)
 	s.mux.HandleFunc("GET /api/v1/annotations", s.annotations)
 	s.mux.HandleFunc("POST /api/v1/books/{id}/annotations", s.addAnnotation)
 	s.mux.HandleFunc("PATCH /api/v1/annotations/{id}", s.updateAnnotation)

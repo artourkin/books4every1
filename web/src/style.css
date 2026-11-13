@@ -2655,3 +2655,283 @@ main {
   font-size: 10px;
   font-weight: 400;
 }
+/* Handwriting remains in PDF page coordinates as the page scales. */
+.pdf-ink-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pdf-ink-layer.ink-enabled {
+  pointer-events: auto;
+  touch-action: pinch-zoom;
+  cursor: crosshair;
+}
+.pdf-ink-layer.ink-tool-eraser.ink-enabled {
+  cursor: cell;
+}
+.ink-stroke,
+.ink-draft {
+  pointer-events: none;
+}
+.ink-toolbar {
+  border-bottom: 1px solid var(--border);
+  background: var(--reader-bg);
+  padding: 9px 25px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 4;
+  flex-shrink: 0;
+}
+.start-writing {
+  font-size: 11px;
+  color: #7a8969;
+  gap: 8px;
+  padding: 3px 0;
+}
+.start-writing > span {
+  font-size: 9px;
+  color: #a4ae97;
+  margin-left: 8px;
+}
+.ink-controls {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  flex-wrap: wrap;
+}
+.ink-tool-group {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.ink-tool-group + .ink-colors {
+  border-left: 1px solid var(--border);
+  padding-left: 13px;
+}
+.ink-colors {
+  display: flex;
+  gap: 8px;
+}
+.ink-colors > button {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  padding: 0;
+  color: white;
+  border: 2px solid transparent;
+}
+.ink-colors > button[aria-pressed="true"] {
+  outline: 1px solid #8e9b7f;
+  outline-offset: 2px;
+  border-color: var(--reader-bg);
+}
+.ink-width {
+  font-size: 9px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #89957c;
+  white-space: nowrap;
+}
+.ink-width > select {
+  display: inline-block;
+  width: auto;
+  font-size: 10px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  background: var(--reader-bg);
+  margin: 0;
+  border-radius: 4px;
+}
+.ink-touch {
+  font-size: 9px;
+  margin: 0;
+  color: #89957c;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.ink-touch input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #71865b;
+}
+.ink-done {
+  font-size: 10px;
+  color: #7e8e6b;
+  border: 1px solid var(--border);
+  padding: 7px 9px;
+  border-radius: 4px;
+}
+.ink-save-state {
+  font-size: 9px;
+  color: #9aa88b;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.ink-save-error {
+  color: #a96550;
+  white-space: normal;
+  flex-wrap: wrap;
+}
+.ink-save-error > span {
+  max-width: 280px;
+}
+.ink-save-error > button {
+  font-size: 9px;
+  text-decoration: underline;
+  padding: 3px;
+}
+.ink-toolbar:has(.ink-save-error) {
+  flex-wrap: wrap;
+}
+.ink-toolbar:has(.ink-save-error) > .ink-save-state {
+  width: 100%;
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.ink-save-error > span {
+  max-width: none;
+  flex: 1 1 250px;
+}
+.theme-night .pdf-page {
+  filter: none;
+}
+.theme-night .pdf-page canvas {
+  filter: invert(0.87) hue-rotate(180deg);
+}
+.theme-night .ink-stroke[data-tool="pen"][fill="#394137"],
+.theme-night .ink-draft[fill="#394137"] {
+  fill: #dfdfcf;
+}
+@media (max-width: 1000px) {
+  .ink-toolbar {
+    padding: 9px 18px;
+  }
+  .ink-controls {
+    gap: 9px;
+  }
+  .ink-save-state {
+    font-size: 8px;
+  }
+  .ink-touch {
+    font-size: 8px;
+  }
+  .ink-toolbar.is-writing {
+    flex-wrap: wrap;
+  }
+  .ink-toolbar.is-writing .ink-save-state {
+    margin-left: auto;
+  }
+  .reader:has(.ink-toolbar) .reader-panel {
+    top: 119px;
+  }
+}
+@media (max-width: 760px) {
+  .ink-toolbar {
+    padding: 8px 13px;
+    gap: 6px;
+  }
+  .ink-controls {
+    gap: 8px;
+    width: 100%;
+    justify-content: space-between;
+  }
+  .ink-save-state {
+    font-size: 8px;
+  }
+  .ink-width {
+    font-size: 8px;
+    gap: 4px;
+  }
+  .ink-tool-group + .ink-colors {
+    padding-left: 9px;
+  }
+  .ink-colors {
+    gap: 6px;
+  }
+  .ink-colors > button {
+    width: 17px;
+    height: 17px;
+  }
+  .ink-touch {
+    margin-right: auto;
+    font-size: 9px;
+  }
+  .ink-done {
+    font-size: 9px;
+  }
+  .start-writing {
+    font-size: 10px;
+  }
+  .start-writing > span {
+    display: none;
+  }
+  .ink-toolbar .icon {
+    width: 27px;
+    height: 27px;
+  }
+  .reader:has(.ink-toolbar) .reader-panel {
+    top: 108px;
+  }
+  .reader:has(.ink-toolbar.is-writing) .reader-panel {
+    top: 175px;
+  }
+  .reader-tools {
+    flex-shrink: 0;
+  }
+}
+@media (max-width: 480px) {
+  .reader:has(.ink-toolbar) .reader-book-name {
+    max-width: 120px;
+  }
+  .ink-controls {
+    column-gap: 6px;
+    row-gap: 9px;
+  }
+  .ink-colors {
+    gap: 6px;
+  }
+  .ink-width > select {
+    font-size: 9px;
+    padding: 4px;
+  }
+  .ink-toolbar.is-writing > .ink-save-state {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+  .ink-save-error > span {
+    flex-basis: 100%;
+  }
+  .reader-error {
+    flex-wrap: wrap;
+  }
+  .reader-error > .text-button {
+    font-size: 9px;
+  }
+}
+.reader-layout {
+  position: relative;
+}
+@media (max-width: 1000px) {
+  .reader-panel,
+  .reader:has(.ink-toolbar) .reader-panel,
+  .reader:has(.ink-toolbar.is-writing) .reader-panel {
+    top: 0;
+  }
+}
