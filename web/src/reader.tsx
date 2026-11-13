@@ -56,7 +56,7 @@ export function Reader({
   onError,
 }: {
   book: Book;
-  onClose: () => void;
+  onClose: (updated?: Book) => void;
   onError: (e: unknown) => void;
 }) {
   const [notes, setNotes] = useState<Annotation[]>([]),
@@ -641,15 +641,16 @@ export function Reader({
       setInkEnabled(true);
       return;
     }
+    let updated: Book | undefined;
     try {
       if (position.current.location)
-        await updateBook(book.id, position.current);
+        updated = await updateBook(book.id, position.current);
     } catch (e) {
       onError(e);
     }
-    void preferences.flush();
+    await preferences.flush();
     await fullscreen.exit();
-    onClose();
+    onClose(updated);
   };
   const readerMenu = popover === "reader" && (
     <ReaderMenu
