@@ -249,7 +249,9 @@ test("focus survives fullscreen rejection, supports writing, and exits with Esca
   const page = await context.newPage();
   await openPDF(page, request);
   await focus(page);
-  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement === null))
+    .toBe(true);
   expect((await page.locator(".pdf-page").boundingBox())!.y).toBe(0);
   await page
     .getByRole("button", { name: "Reader options", exact: true })
@@ -293,7 +295,9 @@ test("EPUB fullscreen retains navigation and the way back to the library", async
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await expect(page.locator(".reader")).toHaveCount(0);
   await expect(page.locator(".book-card")).toHaveCount(6);
-  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement === null))
+    .toBe(true);
 });
 
 test("phone fullscreen preserves page zoom through page turns and keeps its exit menu reachable", async ({
@@ -344,7 +348,9 @@ test("phone fullscreen preserves page zoom through page turns and keeps its exit
   await controlsInsideViewport(page, ".reader-menu");
   await tap(page, "Exit focus mode");
   await expect(page.locator(".reader")).not.toHaveClass(/reader-focused/);
-  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement === null))
+    .toBe(true);
   await expect(page.locator(".reader-header")).toBeVisible();
   await context.close();
 });
