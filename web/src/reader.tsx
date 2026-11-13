@@ -1,4 +1,6 @@
 import { ReaderMenu } from "./ReaderMenu";
+import { ReaderViewport, ReaderViewportNavigation } from "./ReaderViewport";
+import { useReaderFullscreen } from "./useReaderFullscreen";
 import { pdfOutputScale, usePDFDisplayScale } from "./pdfRendering";
 import "./reader.css";
 import { PDFInkLayer } from "./PDFInkLayer";
@@ -100,10 +102,59 @@ export function Reader({
     [inkBusy, setInkBusy] = useState(false),
     [pdfSize, setPdfSize] = useState<PageSize>({ width: 612, height: 792 });
   const [popover, setPopover] = useState<"reader" | "ink" | null>(null);
+  const [readerRoot, setReaderRoot] = useState<HTMLDivElement | null>(null);
+  const fullscreen = useReaderFullscreen(readerRoot);
+  const [viewportZoomed, setViewportZoomed] = useState(false);
+  const viewportActive = fullscreen.focused || viewportZoomed;
+  const [controlsShown, setControlsShown] = useState(true);
+  const [activity, setActivity] = useState(0);
+  const showControls = useCallback(() => {
+    setControlsShown(true);
+    setActivity((n) => n + 1);
+  }, []);
+  useEffect(() => {
+    setControlsShown(true);
+    if (
+      !fullscreen.focused ||
+      viewportZoomed ||
+      inkEnabled ||
+      popover ||
+      panel ||
+      selection
+    )
+      return;
+    const timeout = window.setTimeout(() => {
+      // Keyboard users keep their focused controls until they move back to the page.
+      if (!readerRoot?.querySelector(".reader-viewport-ui :focus-visible"))
+        setControlsShown(false);
+    }, 3500);
+    return () => clearTimeout(timeout);
+  }, [
+    fullscreen.focused,
+    viewportZoomed,
+    inkEnabled,
+    popover,
+    panel,
+    selection,
+    activity,
+    readerRoot,
+  ]);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || popover || selection) return;
+      if (panel) setPanel(null);
+      else if (fullscreen.focused) void fullscreen.exit();
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [fullscreen.focused, fullscreen.exit, popover, selection, panel]);
   const displayScale = usePDFDisplayScale();
   const renderedLayout = useRef("");
   const renderedPDFPage = useRef<number | null>(null);
-  useDialogFocus(popover !== null, ".reader-popover");
+  useDialogFocus(
+    popover !== null,
+    viewportActive ? ".reader-viewport-ui .reader-popover" : ".reader-popover",
+  );
   useEffect(() => {
     if (!popover) return;
     const outside = (event: PointerEvent) => {
@@ -332,11 +383,19 @@ export function Reader({
     if (!node) return;
     const observer = new ResizeObserver((entries) => {
       // contentRect already excludes padding; subtracting it again shrinks the page.
-      setPdfWidth(Math.max(1, Math.min(1000, entries[0].contentRect.width)));
+      setPdfWidth(
+        Math.max(
+          1,
+          Math.min(
+            fullscreen.focused ? Infinity : 1000,
+            entries[0].contentRect.width,
+          ),
+        ),
+      );
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [book.format]);
+  }, [book.format, fullscreen.focused]);
   useEffect(() => {
     if (!pdfReady || !pdf.current || !canvas.current || !textLayer.current)
       return;
@@ -412,6 +471,15 @@ export function Reader({
             ? previous
             : { width: initial.width, height: initial.height },
         );
+        if (differentPage && renderedPDFPage.current !== null) {
+          // Keep the user's magnification, but start the next page at its beginning.
+          mount.current?.scrollTo({ top: 0, left: 0, behavior: "instant" });
+          pdfPage.current?.scrollIntoView({
+            block: "start",
+            inline: "start",
+            behavior: "instant",
+          });
+        }
         renderedPDFPage.current = page;
         setLoading(false);
         if (differentPage)
@@ -468,6 +536,7 @@ export function Reader({
   }, [notes, loading]);
   const move = useCallback(
     (dir: number) => {
+      if (inkBusy) return;
       setSelection(null);
       if (book.format === "PDF")
         setPage((p) => Math.max(1, Math.min(pages, p + dir)));
@@ -477,7 +546,7 @@ export function Reader({
         result?.catch((e) => setError((e as Error).message));
       }
     },
-    [book.format, pages],
+    [book.format, pages, inkBusy],
   );
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -581,11 +650,262 @@ export function Reader({
     } catch (e) {
       onError(e);
     }
+    await fullscreen.exit();
     onClose();
   };
+  const readerMenu = popover === "reader" && (
+    <ReaderMenu
+      format={book.format}
+      fontSize={fontSize}
+      onFontSize={setFontSize}
+      theme={theme}
+      onTheme={() => setTheme(theme === "night" ? "paper" : "night")}
+      onPanel={openPanel}
+      onBookmark={() => void add("bookmark")}
+      bookmarkDisabled={loading || saving}
+      onClose={() => setPopover(null)}
+      focused={fullscreen.focused}
+      nativeFullscreen={fullscreen.native}
+      onFocus={() => {
+        setPopover(null);
+        void (fullscreen.focused ? fullscreen.exit() : fullscreen.enter());
+      }}
+      floating={viewportActive}
+      inkEnabled={inkEnabled}
+      onInkMode={() => changeInkMode(!inkEnabled)}
+      onLibrary={() => void close()}
+    />
+  );
+  const readerPanel = panel && (
+    <aside className="reader-panel">
+      <div className="panel-heading">
+        <h2>{panel === "notes" ? "In the margins" : "Contents"}</h2>
+        <button
+          className="icon"
+          aria-label="Close reader panel"
+          onClick={() => setPanel(null)}
+        >
+          <X size={18} />
+        </button>
+      </div>
+      {panel === "contents" ? (
+        <div className="toc">
+          <div className="appearance-controls">
+            <span>Text size / zoom</span>
+            <button
+              className="secondary"
+              aria-label="Smaller reading text"
+              onClick={() => setFontSize((s) => Math.max(70, s - 10))}
+              disabled={fontSize <= 70}
+            >
+              <Minus size={15} />
+            </button>
+            <strong>{fontSize}%</strong>
+            <button
+              className="secondary"
+              aria-label="Larger reading text"
+              onClick={() => setFontSize((s) => Math.min(180, s + 10))}
+              disabled={fontSize >= 180}
+            >
+              <Plus size={15} />
+            </button>
+          </div>
+          {book.format === "PDF" ? (
+            <>
+              <label>
+                Go to page
+                <input
+                  aria-label="Page number"
+                  type="number"
+                  min={1}
+                  max={pages}
+                  value={page}
+                  onChange={(e) => {
+                    const p = Number(e.target.value);
+                    if (p >= 1 && p <= pages) setPage(p);
+                  }}
+                />
+              </label>
+              <p>{pages} pages in this document.</p>
+            </>
+          ) : (
+            toc.map((t, i) => (
+              <button
+                key={i}
+                style={{ paddingLeft: 16 + t.depth * 16 }}
+                onClick={() => {
+                  rendition.current
+                    ?.display(t.href)
+                    .catch((e) => setError((e as Error).message));
+                  setPanel(null);
+                }}
+              >
+                {t.label}
+                <ArrowRight size={14} />
+              </button>
+            ))
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="panel-subheading">
+            <span>{notes.length} saved thoughts</span>
+            <button
+              className="icon"
+              aria-label="Export book annotations"
+              onClick={() => exportNotes(notes, [book])}
+              disabled={!notes.length}
+            >
+              <Download size={16} />
+            </button>
+          </div>
+          {notes.length ? (
+            <div className="panel-notes">
+              {notes.map((n) => (
+                <NoteCard
+                  key={n.id}
+                  note={n}
+                  onRead={() => jump(n.anchor)}
+                  onDelete={async () => {
+                    try {
+                      await api(`/annotations/${n.id}`, {
+                        method: "DELETE",
+                      });
+                      await refresh();
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  }}
+                  onEdit={async (note) => {
+                    try {
+                      await api(`/annotations/${n.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ note }),
+                      });
+                      await refresh();
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="panel-empty">
+              <NotebookPen size={30} />
+              <h3>A space for your thoughts.</h3>
+              <p>
+                Select a sentence that speaks to you, then save a highlight or
+                note.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </aside>
+  );
+  const selectionDialog = selection && (
+    <div className="selection-overlay">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Annotate selected text"
+        className="selection-card"
+      >
+        <div className="panel-heading">
+          <h2>A thought in the margins.</h2>
+          <button
+            className="icon"
+            aria-label="Cancel annotation"
+            onClick={() => setSelection(null)}
+          >
+            <X size={19} />
+          </button>
+        </div>
+        <blockquote>{selection.quote}</blockquote>
+        <div className="annotation-colors">
+          {Object.entries(palette).map(([name, hex]) => (
+            <button
+              key={name}
+              style={{ background: hex }}
+              className={color === name ? "chosen" : ""}
+              aria-label={`${name} highlight`}
+              onClick={() => setColor(name)}
+            >
+              {color === name && <Check size={15} />}
+            </button>
+          ))}
+          <span>Make it memorable.</span>
+        </div>
+        <textarea
+          aria-label="Annotation note"
+          placeholder="What does this bring to mind? (optional)"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          maxLength={50000}
+        />
+        <button
+          className="primary full"
+          disabled={saving}
+          onClick={() => void add("highlight")}
+        >
+          <Highlighter size={16} />
+          {saving
+            ? "Saving…"
+            : draft
+              ? "Save highlight & note"
+              : "Save highlight"}
+        </button>
+        {error && (
+          <p role="alert" className="error-text">
+            {error}
+          </p>
+        )}
+      </section>
+    </div>
+  );
+  const readerError = error && (
+    <div role="alert" className="reader-error">
+      <AlertCircle size={18} />
+      <span>{error}</span>
+      {ink.pending && (
+        <button
+          className="text-button"
+          onClick={() => {
+            if (
+              window.confirm(
+                "Leave without saving handwriting? Download a recovery copy first to keep your unsaved strokes.",
+              )
+            )
+              onClose();
+          }}
+        >
+          Leave without saving
+        </button>
+      )}
+      <button
+        className="icon"
+        onClick={() => setError("")}
+        aria-label="Dismiss error"
+      >
+        <X size={16} />
+      </button>
+    </div>
+  );
   return (
-    <div className={`reader theme-${theme}`}>
-      <header className="reader-header">
+    <div
+      ref={setReaderRoot}
+      tabIndex={-1}
+      className={`reader theme-${theme}${fullscreen.focused ? " reader-focused" : ""}${viewportZoomed ? " reader-zoomed" : ""}`}
+      onPointerDown={showControls}
+      onPointerUp={showControls}
+      onKeyDown={showControls}
+    >
+      <header
+        className="reader-header"
+        inert={viewportActive}
+        aria-hidden={viewportActive}
+      >
         <button
           className="back-library icon"
           aria-label="Library"
@@ -622,40 +942,9 @@ export function Reader({
             <MoreHorizontal size={21} />
           </button>
         </div>
-        {popover === "reader" && (
-          <ReaderMenu
-            format={book.format}
-            fontSize={fontSize}
-            onFontSize={setFontSize}
-            theme={theme}
-            onTheme={() => setTheme(theme === "night" ? "paper" : "night")}
-            onPanel={openPanel}
-            onBookmark={() => void add("bookmark")}
-            bookmarkDisabled={loading || saving}
-            onClose={() => setPopover(null)}
-          />
-        )}
+        {!viewportActive && readerMenu}
       </header>
-      {book.format === "PDF" && (
-        <PDFInkToolbar
-          ink={ink}
-          page={page}
-          enabled={inkEnabled}
-          tool={inkTool}
-          onTool={setInkTool}
-          color={inkColor}
-          onColor={setInkColor}
-          width={inkWidth}
-          onWidth={inkTool === "highlighter" ? setMarkerWidth : setPenWidth}
-          drawWithTouch={drawWithTouch}
-          onTouch={setDrawWithTouch}
-          busy={inkBusy}
-          onReviewPage={setPage}
-          optionsOpen={popover === "ink"}
-          onOptions={() => setPopover(popover === "ink" ? null : "ink")}
-          onCloseOptions={() => setPopover(null)}
-        />
-      )}
+
       <div className="reader-layout">
         <div className="reading-area">
           <div
@@ -718,40 +1007,19 @@ export function Reader({
               <span>Opening a new world…</span>
             </div>
           )}
-          {error && (
-            <div role="alert" className="reader-error">
-              <AlertCircle size={18} />
-              <span>{error}</span>
-              {ink.pending && (
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Leave without saving handwriting? Download a recovery copy first to keep your unsaved strokes.",
-                      )
-                    )
-                      onClose();
-                  }}
-                >
-                  Leave without saving
-                </button>
-              )}
-              <button
-                className="icon"
-                onClick={() => setError("")}
-                aria-label="Dismiss error"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          )}
-          <footer className="reader-footer">
+          {!viewportActive && readerError}
+          <footer
+            className="reader-footer"
+            inert={viewportActive}
+            aria-hidden={viewportActive}
+          >
             <button
               className="icon"
               aria-label="Previous page"
               onClick={() => move(-1)}
-              disabled={loading || (book.format === "PDF" && page <= 1)}
+              disabled={
+                loading || inkBusy || (book.format === "PDF" && page <= 1)
+              }
             >
               <ChevronLeft size={20} />
             </button>
@@ -772,201 +1040,59 @@ export function Reader({
               className="icon"
               aria-label="Next page"
               onClick={() => move(1)}
-              disabled={loading || (book.format === "PDF" && page >= pages)}
+              disabled={
+                loading || inkBusy || (book.format === "PDF" && page >= pages)
+              }
             >
               <ChevronRight size={20} />
             </button>
           </footer>
         </div>
-        {panel && (
-          <aside className="reader-panel">
-            <div className="panel-heading">
-              <h2>{panel === "notes" ? "In the margins" : "Contents"}</h2>
-              <button
-                className="icon"
-                aria-label="Close reader panel"
-                onClick={() => setPanel(null)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            {panel === "contents" ? (
-              <div className="toc">
-                <div className="appearance-controls">
-                  <span>Text size / zoom</span>
-                  <button
-                    className="secondary"
-                    aria-label="Smaller reading text"
-                    onClick={() => setFontSize((s) => Math.max(70, s - 10))}
-                    disabled={fontSize <= 70}
-                  >
-                    <Minus size={15} />
-                  </button>
-                  <strong>{fontSize}%</strong>
-                  <button
-                    className="secondary"
-                    aria-label="Larger reading text"
-                    onClick={() => setFontSize((s) => Math.min(180, s + 10))}
-                    disabled={fontSize >= 180}
-                  >
-                    <Plus size={15} />
-                  </button>
-                </div>
-                {book.format === "PDF" ? (
-                  <>
-                    <label>
-                      Go to page
-                      <input
-                        aria-label="Page number"
-                        type="number"
-                        min={1}
-                        max={pages}
-                        value={page}
-                        onChange={(e) => {
-                          const p = Number(e.target.value);
-                          if (p >= 1 && p <= pages) setPage(p);
-                        }}
-                      />
-                    </label>
-                    <p>{pages} pages in this document.</p>
-                  </>
-                ) : (
-                  toc.map((t, i) => (
-                    <button
-                      key={i}
-                      style={{ paddingLeft: 16 + t.depth * 16 }}
-                      onClick={() => {
-                        rendition.current
-                          ?.display(t.href)
-                          .catch((e) => setError((e as Error).message));
-                        setPanel(null);
-                      }}
-                    >
-                      {t.label}
-                      <ArrowRight size={14} />
-                    </button>
-                  ))
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="panel-subheading">
-                  <span>{notes.length} saved thoughts</span>
-                  <button
-                    className="icon"
-                    aria-label="Export book annotations"
-                    onClick={() => exportNotes(notes, [book])}
-                    disabled={!notes.length}
-                  >
-                    <Download size={16} />
-                  </button>
-                </div>
-                {notes.length ? (
-                  <div className="panel-notes">
-                    {notes.map((n) => (
-                      <NoteCard
-                        key={n.id}
-                        note={n}
-                        onRead={() => jump(n.anchor)}
-                        onDelete={async () => {
-                          try {
-                            await api(`/annotations/${n.id}`, {
-                              method: "DELETE",
-                            });
-                            await refresh();
-                          } catch (e) {
-                            setError((e as Error).message);
-                          }
-                        }}
-                        onEdit={async (note) => {
-                          try {
-                            await api(`/annotations/${n.id}`, {
-                              method: "PATCH",
-                              body: JSON.stringify({ note }),
-                            });
-                            await refresh();
-                          } catch (e) {
-                            setError((e as Error).message);
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="panel-empty">
-                    <NotebookPen size={30} />
-                    <h3>A space for your thoughts.</h3>
-                    <p>
-                      Select a sentence that speaks to you, then save a
-                      highlight or note.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-          </aside>
-        )}
+        {!viewportActive && readerPanel}
       </div>
-      {selection && (
-        <div className="selection-overlay">
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-label="Annotate selected text"
-            className="selection-card"
-          >
-            <div className="panel-heading">
-              <h2>A thought in the margins.</h2>
-              <button
-                className="icon"
-                aria-label="Cancel annotation"
-                onClick={() => setSelection(null)}
-              >
-                <X size={19} />
-              </button>
-            </div>
-            <blockquote>{selection.quote}</blockquote>
-            <div className="annotation-colors">
-              {Object.entries(palette).map(([name, hex]) => (
-                <button
-                  key={name}
-                  style={{ background: hex }}
-                  className={color === name ? "chosen" : ""}
-                  aria-label={`${name} highlight`}
-                  onClick={() => setColor(name)}
-                >
-                  {color === name && <Check size={15} />}
-                </button>
-              ))}
-              <span>Make it memorable.</span>
-            </div>
-            <textarea
-              aria-label="Annotation note"
-              placeholder="What does this bring to mind? (optional)"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              maxLength={50000}
-            />
-            <button
-              className="primary full"
-              disabled={saving}
-              onClick={() => void add("highlight")}
-            >
-              <Highlighter size={16} />
-              {saving
-                ? "Saving…"
-                : draft
-                  ? "Save highlight & note"
-                  : "Save highlight"}
-            </button>
-            {error && (
-              <p role="alert" className="error-text">
-                {error}
-              </p>
-            )}
-          </section>
-        </div>
-      )}
+
+      <ReaderViewport root={readerRoot} onZoomed={setViewportZoomed}>
+        {viewportActive && (
+          <ReaderViewportNavigation
+            page={page}
+            pages={pages}
+            progress={progress}
+            pdf={book.format === "PDF"}
+            loading={loading}
+            busy={inkBusy}
+            optionsOpen={popover === "reader"}
+            onMove={move}
+            onPage={() => openPanel("contents")}
+            onOptions={() => setPopover(popover === "reader" ? null : "reader")}
+            shown={controlsShown || viewportZoomed || inkEnabled}
+            onShow={showControls}
+          />
+        )}
+        {book.format === "PDF" && (
+          <PDFInkToolbar
+            ink={ink}
+            page={page}
+            enabled={inkEnabled}
+            tool={inkTool}
+            onTool={setInkTool}
+            color={inkColor}
+            onColor={setInkColor}
+            width={inkWidth}
+            onWidth={inkTool === "highlighter" ? setMarkerWidth : setPenWidth}
+            drawWithTouch={drawWithTouch}
+            onTouch={setDrawWithTouch}
+            busy={inkBusy}
+            onReviewPage={setPage}
+            optionsOpen={popover === "ink"}
+            onOptions={() => setPopover(popover === "ink" ? null : "ink")}
+            onCloseOptions={() => setPopover(null)}
+          />
+        )}
+        {viewportActive && readerMenu}
+        {viewportActive && readerPanel}
+        {viewportActive && readerError}
+        {selectionDialog}
+      </ReaderViewport>
     </div>
   );
 }
