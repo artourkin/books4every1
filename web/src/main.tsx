@@ -1,3 +1,4 @@
+import { SessionBoundary, notifySessionChange } from "./SessionBoundary";
 import {
   PreferencesProvider,
   PreferencesError,
@@ -43,6 +44,7 @@ import {
   type Annotation,
   type User,
   type Session,
+  setRequestProfile,
 } from "./api";
 const Reader = lazy(() =>
   import("./reader").then((m) => ({ default: m.Reader })),
@@ -61,6 +63,7 @@ function App() {
   const [sort, setSort] = usePreference("librarySort"),
     [layout, setLayout] = usePreference("libraryLayout");
   const activateSession = (session: Session) => {
+    setRequestProfile(session.authenticated ? session.profileId : undefined);
     setAuthenticated(session.authenticated);
     setPasswordRequired(session.passwordRequired);
     setAccountsEnabled(session.accountsEnabled);
@@ -276,7 +279,7 @@ function App() {
                 method: "POST",
                 body: JSON.stringify({ username, password }),
               });
-              activateSession(session);
+              if (session.authenticated) notifySessionChange();
               setUsername("");
               setPassword("");
               setError("");
@@ -1021,7 +1024,13 @@ function App() {
                 </span>
                 <h2 id="modal-title">Your little corner.</h2>
                 <p>Folio is an open-source home for your books.</p>
-                <AccountSettings user={user} onSession={activateSession} />
+                <AccountSettings
+                  user={user}
+                  onSession={(session) => {
+                    activateSession(session);
+                    notifySessionChange(false);
+                  }}
+                />
                 <div className="settings-row">
                   <HardDrive size={20} />
                   <div>
@@ -1107,6 +1116,7 @@ function App() {
                             "Your preferences have not saved. Retry before signing out.",
                           );
                         await api("/session", { method: "DELETE" });
+                        notifySessionChange();
                         preferences.activate(null);
                         setUser(null);
                         setAuthenticated(false);
@@ -1375,7 +1385,9 @@ function BookDetails({
 }
 
 createRoot(document.getElementById("root")!).render(
-  <PreferencesProvider>
-    <App />
-  </PreferencesProvider>,
+  <SessionBoundary>
+    <PreferencesProvider>
+      <App />
+    </PreferencesProvider>
+  </SessionBoundary>,
 );

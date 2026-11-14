@@ -65,13 +65,13 @@ export function AccountSettings({
           : "Keep your settings on every device"}
       </h3>
       <p>
-        Users share the books, reading positions, and annotations. Pen and
-        reader preferences belong to each account.
+        Each account has its own private books, collections, reading positions,
+        notes, handwriting, and reader preferences.
       </p>
       {!user && (
         <p>
           Create the owner account to enable individual sign-in. Your current
-          library stays available to the household.
+          library will belong to the owner account.
         </p>
       )}
       {user && (
@@ -208,7 +208,7 @@ export function AccountSettings({
                     onClick={async () => {
                       if (
                         !window.confirm(
-                          `Delete ${u.username}'s account and preferences? The shared books and annotations will be kept.`,
+                          `Delete ${u.username}'s account and their entire private library, including books, notes, handwriting, and preferences? This cannot be undone.`,
                         )
                       )
                         return;

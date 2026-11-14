@@ -81,6 +81,9 @@ async function seed(request: APIRequestContext, url: string) {
       })
     ).ok(),
   ).toBe(true);
+  return uploadPDF(request, url);
+}
+async function uploadPDF(request: APIRequestContext, url: string) {
   const res = await request.post(url + "/api/v1/books", {
     multipart: {
       file: {
@@ -93,7 +96,9 @@ async function seed(request: APIRequestContext, url: string) {
     },
   });
   expect(res.ok()).toBe(true);
+  return res.json();
 }
+
 async function createOwner(request: APIRequestContext, url: string) {
   await seed(request, url);
   expect(
@@ -162,6 +167,16 @@ test("owner setup preserves the library and pen preferences follow accounts acro
   await page.getByLabel("Username", { exact: true }).fill("bob");
   await page.getByLabel("Password", { exact: true }).fill("bob-password-123");
   await page.getByRole("button", { name: "Open my library" }).click();
+  await expect(
+    page.getByText("Every library begins with a book."),
+  ).toBeVisible();
+  expect(
+    await (
+      await page.context().request.get(accountURL + "/api/v1/books")
+    ).json(),
+  ).toEqual([]);
+  await uploadPDF(page.context().request, accountURL);
+  await page.reload();
   await expect(page.locator(".book-grid")).toBeVisible();
   await readPDF(page);
   await expect(page.getByLabel("Ink thickness")).toHaveValue("3");
@@ -256,13 +271,19 @@ test("failed preference saves stay visible and retry persists the latest selecti
   );
 });
 
-test("an account switch in another tab cannot save one users settings into another account", async ({
+test("switching accounts in another tab clears the previous private library and rejects stale writes", async ({
   page,
   context,
   request,
   accountURL,
 }) => {
   await createOwner(request, accountURL);
+  const ownerSession = await (
+    await request.get(accountURL + "/api/v1/session")
+  ).json();
+  const ownerBooks = await (
+    await request.get(accountURL + "/api/v1/books")
+  ).json();
   expect(
     (
       await request.post(accountURL + "/api/v1/users", {
@@ -278,13 +299,33 @@ test("an account switch in another tab cannot save one users settings into anoth
   await other.getByLabel("Username", { exact: true }).fill("bob");
   await other.getByLabel("Password", { exact: true }).fill("bob-password-123");
   await other.getByRole("button", { name: "Open my library" }).click();
-  await expect(other.locator(".app")).toBeVisible();
-  await page.getByLabel("Ink thickness").selectOption("8");
-  await expect(page.locator(".preferences-error")).toContainText(
-    "account changed in another tab",
+  await expect(
+    other.getByText("Every library begins with a book."),
+  ).toBeVisible();
+  await expect(page.locator(".reader")).toHaveCount(0);
+  await expect(
+    page.getByText("Every library begins with a book."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Read preferences", exact: true }),
+  ).toHaveCount(0);
+  const forbidden = await context.request.get(
+    accountURL + "/api/v1/books/" + ownerBooks[0].id + "/file",
   );
+  expect(forbidden.status()).toBe(404);
+  const stale = await context.request.patch(
+    accountURL + "/api/v1/me/preferences",
+    {
+      headers: { "X-Folio-Profile": ownerSession.profileId },
+      data: { penWidth: 8 },
+    },
+  );
+  expect(stale.status()).toBe(409);
   const prefs = await (
     await context.request.get(accountURL + "/api/v1/me/preferences")
   ).json();
   expect(prefs.penWidth).toBe(3);
+  expect(
+    await (await context.request.get(accountURL + "/api/v1/books")).json(),
+  ).toEqual([]);
 });

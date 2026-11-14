@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import {
   api,
+  profileHeaders,
   updateBook,
   exportNotes,
   type Book,
@@ -241,6 +242,7 @@ export function Reader({
         if (book.format === "PDF") {
           loadingTask = pdfjs.getDocument({
             url: `/api/v1/books/${book.id}/file`,
+            httpHeaders: profileHeaders(),
             cMapUrl: "/pdfjs/cmaps/",
             cMapPacked: true,
             standardFontDataUrl: "/pdfjs/standard_fonts/",
@@ -259,6 +261,7 @@ export function Reader({
         } else {
           const response = await fetch(`/api/v1/books/${book.id}/file`, {
             signal: controller.signal,
+            headers: profileHeaders(),
           });
           if (!response.ok) throw new Error("Could not open this EPUB");
           const data = await response.arrayBuffer();

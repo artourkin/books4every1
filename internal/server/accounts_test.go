@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -107,12 +106,13 @@ func TestAccountsUpgradePreferencesAndIsolation(t *testing.T) {
 	other.request(t, "GET", "/api/v1/users", "", 403)
 	other.request(t, "POST", "/api/v1/users", `{"username":"evil","password":"a long password","admin":true}`, 403)
 	other.request(t, "DELETE", "/api/v1/users/"+u.ID, "", 403)
-	// Library and existing handwriting remain shared and unchanged by account setup.
-	if !bytes.Contains(other.request(t, "GET", "/api/v1/books", "", 200), []byte(book.ID)) {
-		t.Fatal("existing library lost")
+	// Existing content moves to the original owner, never to another account.
+	if got := string(other.request(t, "GET", "/api/v1/books", "", 200)); strings.TrimSpace(got) != "[]" {
+		t.Fatal("another account can see the owner's library")
 	}
+	other.request(t, "GET", "/api/v1/books/"+book.ID+"/ink/1", "", 404)
 	var ink InkPage
-	json.Unmarshal(other.request(t, "GET", "/api/v1/books/"+book.ID+"/ink/1", "", 200), &ink)
+	json.Unmarshal(owner.request(t, "GET", "/api/v1/books/"+book.ID+"/ink/1", "", 200), &ink)
 	if ink.Revision != 1 || len(ink.Strokes) != 1 {
 		t.Fatal("existing ink lost")
 	}

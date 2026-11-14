@@ -81,7 +81,7 @@ func TestLibraryLifecycleAndPersistence(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer reopened.Close()
-	saved, e := reopened.book(b.ID)
+	saved, e := reopened.book(legacyProfile, b.ID)
 	if e != nil || saved.Progress != .4 || !saved.Favorite || saved.Status != "reading" {
 		t.Fatalf("persisted state: %+v %v", saved, e)
 	}
@@ -102,7 +102,7 @@ func TestLibraryLifecycleAndPersistence(t *testing.T) {
 		t.Fatalf("range response %d: %q", res.StatusCode, data)
 	}
 	request(t, h, "DELETE", "/api/v1/collections/Nature", "", 204)
-	saved, _ = s.book(b.ID)
+	saved, _ = s.book(legacyProfile, b.ID)
 	if saved.Collection != "" {
 		t.Fatal("deleting collection should keep and unassign books")
 	}
