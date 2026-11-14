@@ -8,9 +8,13 @@ For accounts, `POST /session` with `{"username":"alex","password":"…"}` sets a
 
 Before the first owner account is created, the legacy `{"password":"…"}` login and signed-cookie mechanism remain available. A configured `FOLIO_PASSWORD` is required for access and owner creation; without one, trusted-network access is enabled until owner setup. The first `POST /users` creates an administrator and replaces the caller's legacy cookie with an account session. Its legacy-profile server preferences are copied to the owner. Afterward all protected endpoints require an account session or the server API token, and legacy signed cookies no longer authorize access. `FOLIO_PASSWORD` cannot bypass account login.
 
-Native clients/scripts may send `Authorization: Bearer <FOLIO_API_TOKEN>`. This credential has administrator and full shared-library access; with accounts enabled its preferences belong to the earliest remaining administrator. It is a server credential, not a per-user token. No CORS policy is enabled. Browser writes must have an Origin matching the request Host; a reverse proxy must preserve Host. Non-browser clients can omit Origin. Session and health endpoints are public; other endpoints enforce the current access mode. Account passwords are 8–128 UTF-8 bytes; usernames are case-insensitive, 3–32 ASCII letters/numbers/dots/underscores/dashes, starting with a letter or number.
+Native clients/scripts may send `Authorization: Bearer <FOLIO_API_TOKEN>`. With accounts enabled, this credential is permanently bound to the original owner account. It has that account's library and preferences and the owner's account-management permissions, with no cross-user library bypass. Deleting that account invalidates the token; it is never rebound to another user. Other accounts can authenticate native clients with their own username/password sessions. No CORS policy is enabled. Browser writes must have an Origin matching the request Host; a reverse proxy must preserve Host. Non-browser clients can omit Origin. Session and health endpoints are public; other endpoints enforce the current access mode. Account passwords are 8–128 UTF-8 bytes; usernames are case-insensitive, 3–32 ASCII letters/numbers/dots/underscores/dashes, starting with a letter or number.
 
-The books, reading state, collections, and annotations remain shared across accounts. Only preferences are private to each account.
+Every library endpoint is scoped to the authenticated account: books, original files, downloads, covers, reading positions, favorites, collections, annotations, and PDF ink. Administrators also receive 404 for another user's book or annotation ID. Collection names and sample imports are independent per account. The API does not accept client-selected ownership or support cross-user sharing.
+
+All protected endpoints accept `X-Folio-Profile: <profileId from session>`. If the authenticated cookie/token now belongs to a different profile, the request returns 409 before any side effect. Browser clients send this on API and reader file requests. This header is a mismatch guard, never an alternative authentication mechanism.
+
+Older unowned content is migrated once to the original owner (or earliest administrator on upgrade from the previous account-only schema). Before the first account exists, the legacy library remains under its setup profile and is atomically transferred when the owner is created. Other accounts start empty. Original files, IDs, reading state, note anchors, and ink revisions are preserved. Restarting does not redistribute content.
 
 ```sh
 curl -H "Authorization: Bearer $FOLIO_API_TOKEN" http://localhost:8080/api/v1/books
@@ -28,7 +32,7 @@ curl -H "Authorization: Bearer $FOLIO_API_TOKEN" -F file=@book.epub http://local
 | POST | `/me/password` | `{"currentPassword":"…","password":"…"}`; change own password, revoke previous sessions (204) |
 | GET | `/users` | User summaries (`id`, `username`, `admin`); administrators only |
 | POST | `/users` | `{"username":"alex","password":"…","admin":false}`; creates user (201); first account becomes owner |
-| DELETE | `/users/{id}` | Administrator only; delete account/preferences/sessions (204); cannot delete self or the last administrator |
+| DELETE | `/users/{id}` | Administrator only; delete account, private library, files, annotations, collections, preferences, and sessions (204); cannot delete self or the last administrator |
 | POST | `/users/{id}/password` | `{"password":"…"}`; administrator resets another user's password and revokes their sessions (204) |
 | GET | `/books` | Array of Book, newest imports first |
 | POST | `/books` | Multipart field `file`; returns imported Book (201) |

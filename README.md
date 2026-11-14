@@ -2,7 +2,7 @@
 
 A quiet, self-hosted home for your books and the thoughts they leave behind.
 
-Folio is a web-first reader with household accounts for **DRM-free EPUB and PDF** files. Your books, reading positions, highlights, and notes live on your own server. It is licensed under AGPL-3.0-only.
+Folio is a web-first reader with private user accounts for **DRM-free EPUB and PDF** files. Your books, reading positions, highlights, and notes live on your own server. It is licensed under AGPL-3.0-only.
 
 ![Folio library with optional public-domain excerpts](docs/library.png)
 
@@ -67,13 +67,13 @@ Open http://localhost:5173. Vite proxies `/api` to Go on `127.0.0.1:8080`. The p
 | `FOLIO_API_TOKEN` | empty | Optional bearer token for scripts and future clients |
 | `FOLIO_SECURE_COOKIE` | `false` | Require HTTPS for the session cookie |
 
-Before accounts are enabled, `FOLIO_PASSWORD` protects the existing library and owner setup. Sign in with that password, then open **Library settings → Create owner account**. On installations without a configured password, owner setup is available directly from Library settings. The first account is an administrator; afterward, sign-in requires a username and account password even if `FOLIO_PASSWORD` is empty. Existing legacy cookies stop working once the first owner is created.
+Before accounts are enabled, `FOLIO_PASSWORD` protects the existing library and owner setup. Sign in with that password, then open **Library settings → Create owner account**. On installations without a configured password, owner setup is available directly from Library settings. The first account is an administrator; afterward, sign-in requires a username and account password even if `FOLIO_PASSWORD` is empty. Existing legacy cookies stop working once the first owner is created. Existing books, reading state, collections, notes, and ink move to the owner in the same transaction; new accounts start empty. On upgrade from a version with accounts but no library ownership, existing content is assigned once to the earliest administrator. This migration preserves original files and ink revisions and does not copy content into other accounts.
 
-Administrators can add users, reset another user's password, and delete accounts in Library settings. Every user can change their own password. The library, favorites, collections, reading positions, text annotations, and handwriting are shared; account preferences are personal. Deleting an account removes its preferences and sessions while keeping the shared content. There is no public registration after owner setup.
+Administrators can add users, reset another user's password, and delete accounts in Library settings. Every user can change their own password. Each account owns its books, favorites, collections, reading positions, text annotations, handwriting, and preferences. Library endpoints enforce ownership for every account, including administrators. Deleting an account deletes its private library, original files, annotations, collections, preferences, and sessions. There is no public registration after owner setup.
 
-Pen settings save automatically, including independent pen and highlighter thickness, the selected tool and color, and finger drawing. Reader theme, text size/page zoom, highlight color, library layout, and sort order are also saved on the server. Reopening a book or signing in on another device restores them. A failed save leaves an error and retry action visible. Cross-tab account changes cannot write the previous user's settings into the new account.
+Pen settings save automatically, including independent pen and highlighter thickness, the selected tool and color, and finger drawing. Reader theme, text size/page zoom, highlight color, library layout, and sort order are also saved on the server. Reopening a book or signing in on another device restores them. A failed save leaves an error and retry action visible. Switching accounts clears private views in other open tabs. Requests carry a profile guard so old tabs and pending writes cannot apply the previous user's changes to the new account.
 
-Account passwords use salted PBKDF2-HMAC-SHA256 with 600,000 iterations. Account sessions use random tokens stored only as hashes in SQLite. Sign-out revokes the current account session; password changes/resets revoke the user's previous sessions. The legacy shared-password mode retains its signed-cookie behavior until accounts are enabled. `FOLIO_API_TOKEN` remains a full-access server credential; with accounts enabled it acts as an administrator and uses that administrator's preferences. Use HTTPS outside your trusted network.
+Account passwords use salted PBKDF2-HMAC-SHA256 with 600,000 iterations. Account sessions use random tokens stored only as hashes in SQLite. Sign-out revokes the current account session; password changes/resets revoke the user's previous sessions. The legacy shared-password mode retains its signed-cookie behavior until accounts are enabled. `FOLIO_API_TOKEN` remains a deployment credential; with accounts enabled it is bound to the original owner account, uses that account's library/preferences, and obeys the same ownership checks. It never gains access to another user's library and stops working if the original owner is deleted. Use HTTPS outside your trusted network.
 
 For owner password recovery on the Docker host, read a new password without echoing it or putting it in shell history, then pass it through stdin (replace `owner` with the username):
 
@@ -126,7 +126,7 @@ Stop Folio before copying the **entire data directory or Docker volume**, then r
 
 ## Current scope
 
-This is an initial working release, not a complete Apple Books replacement. It has one shared library per server, household accounts, online reading, and EPUB/PDF support. It does not yet include private per-user libraries, offline/PWA storage, full-text search, OPDS/Calibre integration, OCR, audiobooks, DRM removal, MOBI/AZW support, or native clients. Scanned PDFs without a text layer can be read and bookmarked but cannot have text highlights. Password-encrypted PDFs are not currently supported. Original PDFs and EPUBs are unchanged; annotations are stored separately, not embedded into exported books.
+This is an initial working release, not a complete Apple Books replacement. It has private per-user libraries, online reading, and EPUB/PDF support. It does not yet include library sharing, offline/PWA storage, full-text search, OPDS/Calibre integration, OCR, audiobooks, DRM removal, MOBI/AZW support, or native clients. Scanned PDFs without a text layer can be read and bookmarked but cannot have text highlights. Password-encrypted PDFs are not currently supported. Original PDFs and EPUBs are unchanged; annotations are stored separately, not embedded into exported books.
 
 Next priorities are accessibility and cross-browser hardening, larger-library indexing and pagination, offline caching, multi-user libraries and scoped tokens, then native clients using the same API. The current API is versioned but may evolve before a stable 1.0 release.
 

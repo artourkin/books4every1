@@ -63,7 +63,7 @@ func (s *Server) samples(w http.ResponseWriter, r *http.Request) {
 	out := []Book{}
 	for _, sample := range sampleBooks {
 		var exists int
-		s.db.QueryRow("SELECT count(*) FROM books WHERE sample=1 AND title=?", sample.Title).Scan(&exists)
+		s.db.QueryRow("SELECT count(*) FROM books WHERE owner_id=? AND sample=1 AND title=?", principal(r).ID, sample.Title).Scan(&exists)
 		if exists > 0 {
 			continue
 		}
@@ -80,13 +80,13 @@ func (s *Server) samples(w http.ResponseWriter, r *http.Request) {
 			fail(w, 500, "Could not write sample")
 			return
 		}
-		b, e := s.importFile(f.Name(), sample.Title+".epub", "EPUB", int64(len(data)), true)
+		b, e := s.importFile(principal(r).ID, f.Name(), sample.Title+".epub", "EPUB", int64(len(data)), true)
 		os.Remove(f.Name())
 		if e != nil {
 			fail(w, 500, "Could not import sample")
 			return
 		}
-		s.db.Exec("UPDATE books SET color=? WHERE id=?", sample.Color, b.ID)
+		s.db.Exec("UPDATE books SET color=? WHERE id=? AND owner_id=?", sample.Color, b.ID, principal(r).ID)
 		b.Color = sample.Color
 		out = append(out, b)
 	}

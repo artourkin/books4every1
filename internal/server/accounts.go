@@ -48,6 +48,9 @@ func tokenHash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 func (s *Server) identity(r *http.Request) (User, bool) {
+	if u, ok := r.Context().Value(principalKey{}).(User); ok {
+		return u, true
+	}
 	enabled, err := s.accountsEnabled()
 	if err != nil {
 		return User{}, false
@@ -57,7 +60,7 @@ func (s *Server) identity(r *http.Request) (User, bool) {
 			return User{ID: legacyProfile, Admin: true}, true
 		}
 		var u User
-		err = s.db.QueryRow("SELECT id,username,admin FROM users WHERE admin=1 ORDER BY created_at,id LIMIT 1").Scan(&u.ID, &u.Username, &u.Admin)
+		err = s.db.QueryRow("SELECT id,username,admin FROM users WHERE id=(SELECT value FROM app_metadata WHERE key='original_owner')").Scan(&u.ID, &u.Username, &u.Admin)
 		return u, err == nil
 	}
 	if !enabled {
@@ -136,6 +139,12 @@ func (s *Server) newSession(w http.ResponseWriter, userID, passwordHash string) 
 	return nil
 }
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if expected := r.Header.Get("X-Folio-Profile"); expected != "" {
+		if user, ok := s.identity(r); ok && user.ID != expected {
+			fail(w, 409, "The account changed in another tab. Reload to continue.")
+			return
+		}
+	}
 	if c, e := r.Cookie("folio_session"); e == nil {
 		if _, err := s.db.Exec("DELETE FROM sessions WHERE token_hash=?", tokenHash(c.Value)); err != nil {
 			fail(w, 500, "Could not sign out")
@@ -335,6 +344,9 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	if _, err = tx.Exec("INSERT INTO users(id,username,password_hash,admin,created_at) VALUES(?,?,?,?,?)", u.ID, u.Username, hash, u.Admin, now()); err == nil && count == 0 {
 		_, err = tx.Exec("INSERT INTO preferences(user_id,data) SELECT ?,data FROM preferences WHERE user_id=?", u.ID, legacyProfile)
 	}
+	if err == nil && count == 0 {
+		err = claimLegacyLibrary(tx, u.ID)
+	}
 	if err == nil {
 		err = tx.Commit()
 	}
@@ -475,6 +487,34 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	rows, err := tx.Query("SELECT id,format FROM books WHERE owner_id=?", target)
+	if err != nil {
+		fail(w, 500, "Could not delete library")
+		return
+	}
+	var removed []Book
+	for rows.Next() {
+		var book Book
+		if err = rows.Scan(&book.ID, &book.Format); err != nil {
+			rows.Close()
+			fail(w, 500, "Could not delete library")
+			return
+		}
+		removed = append(removed, book)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		fail(w, 500, "Could not delete library")
+		return
+	}
+	if _, err = tx.Exec("DELETE FROM books WHERE owner_id=?", target); err == nil {
+		_, err = tx.Exec("DELETE FROM collections WHERE owner_id=?", target)
+	}
+	if err != nil {
+		fail(w, 500, "Could not delete library")
+		return
+	}
 	if _, err = tx.Exec("DELETE FROM preferences WHERE user_id=?", target); err == nil {
 		_, err = tx.Exec("DELETE FROM users WHERE id=?", target)
 	}
@@ -484,6 +524,9 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, 500, "Could not delete account")
 		return
+	}
+	for _, book := range removed {
+		s.removeBookFiles(book)
 	}
 	w.WriteHeader(204)
 }
