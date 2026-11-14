@@ -1,3 +1,4 @@
+import { usePreference, usePreferences, PreferencesError } from "./preferences";
 import { ReaderMenu } from "./ReaderMenu";
 import { ReaderViewport, ReaderViewportNavigation } from "./ReaderViewport";
 import { useReaderFullscreen } from "./useReaderFullscreen";
@@ -6,7 +7,7 @@ import "./reader.css";
 import { PDFInkLayer } from "./PDFInkLayer";
 import { PDFInkToolbar } from "./PDFInkToolbar";
 import { usePDFInk } from "./usePDFInk";
-import type { InkTool, PageSize } from "./ink";
+import type { PageSize } from "./ink";
 import { useDialogFocus } from "./useDialogFocus";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ePub from "epubjs";
@@ -31,6 +32,7 @@ import {
 } from "lucide-react";
 import {
   api,
+  profileHeaders,
   updateBook,
   exportNotes,
   type Book,
@@ -55,14 +57,13 @@ export function Reader({
   onError,
 }: {
   book: Book;
-  onClose: () => void;
+  onClose: (updated?: Book) => void;
   onError: (e: unknown) => void;
 }) {
   const [notes, setNotes] = useState<Annotation[]>([]),
     [panel, setPanel] = useState<"notes" | "contents" | null>(null),
     [selection, setSelection] = useState<Selection | null>(null),
     [draft, setDraft] = useState(""),
-    [color, setColor] = useState("yellow"),
     [page, setPage] = useState(
       book.format === "PDF" ? Math.max(1, Number(book.location) || 1) : 1,
     ),
@@ -72,15 +73,19 @@ export function Reader({
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [saving, setSaving] = useState(false),
-    [fontSize, setFontSize] = useState(
-      () => Number(localStorage.getItem("folio-font-size")) || 100,
-    ),
-    [theme, setTheme] = useState(
-      () => localStorage.getItem("folio-theme") || "paper",
-    ),
     [toc, setToc] = useState<{ label: string; href: string; depth: number }[]>(
       [],
     );
+  const [color, setColor] = usePreference("highlightColor");
+  const [fontSize, setFontSize] = usePreference("fontSize");
+  const [theme, setTheme] = usePreference("theme");
+  const [inkTool, setInkTool] = usePreference("inkTool");
+  const [inkBrush, setInkBrush] = usePreference("inkBrush");
+  const [inkColor, setInkColor] = usePreference("inkColor");
+  const [penWidth, setPenWidth] = usePreference("penWidth");
+  const [markerWidth, setMarkerWidth] = usePreference("markerWidth");
+  const [drawWithTouch, setDrawWithTouch] = usePreference("drawWithTouch");
+  const preferences = usePreferences();
   const mount = useRef<HTMLDivElement>(null),
     canvas = useRef<HTMLCanvasElement>(null),
     textLayer = useRef<HTMLDivElement>(null),
@@ -94,11 +99,6 @@ export function Reader({
     [pdfReady, setPdfReady] = useState(false),
     [pdfWidth, setPdfWidth] = useState(800);
   const [inkEnabled, setInkEnabled] = useState(false),
-    [inkTool, setInkTool] = useState<InkTool>("pen"),
-    [inkColor, setInkColor] = useState("#394137"),
-    [penWidth, setPenWidth] = useState(3),
-    [markerWidth, setMarkerWidth] = useState(12),
-    [drawWithTouch, setDrawWithTouch] = useState(false),
     [inkBusy, setInkBusy] = useState(false),
     [pdfSize, setPdfSize] = useState<PageSize>({ width: 612, height: 792 });
   const [popover, setPopover] = useState<"reader" | "ink" | null>(null);
@@ -242,6 +242,7 @@ export function Reader({
         if (book.format === "PDF") {
           loadingTask = pdfjs.getDocument({
             url: `/api/v1/books/${book.id}/file`,
+            httpHeaders: profileHeaders(),
             cMapUrl: "/pdfjs/cmaps/",
             cMapPacked: true,
             standardFontDataUrl: "/pdfjs/standard_fonts/",
@@ -260,6 +261,7 @@ export function Reader({
         } else {
           const response = await fetch(`/api/v1/books/${book.id}/file`, {
             signal: controller.signal,
+            headers: profileHeaders(),
           });
           if (!response.ok) throw new Error("Could not open this EPUB");
           const data = await response.arrayBuffer();
@@ -372,8 +374,6 @@ export function Reader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book.id]);
   useEffect(() => {
-    localStorage.setItem("folio-theme", theme);
-    localStorage.setItem("folio-font-size", String(fontSize));
     rendition.current?.themes.select(theme);
     rendition.current?.themes.fontSize(`${fontSize}%`);
   }, [theme, fontSize]);
@@ -644,14 +644,16 @@ export function Reader({
       setInkEnabled(true);
       return;
     }
+    let updated: Book | undefined;
     try {
       if (position.current.location)
-        await updateBook(book.id, position.current);
+        updated = await updateBook(book.id, position.current);
     } catch (e) {
       onError(e);
     }
+    await preferences.flush();
     await fullscreen.exit();
-    onClose();
+    onClose(updated);
   };
   const readerMenu = popover === "reader" && (
     <ReaderMenu
@@ -830,7 +832,7 @@ export function Reader({
               style={{ background: hex }}
               className={color === name ? "chosen" : ""}
               aria-label={`${name} highlight`}
-              onClick={() => setColor(name)}
+              onClick={() => setColor(name as typeof color)}
             >
               {color === name && <Check size={15} />}
             </button>
@@ -1052,6 +1054,7 @@ export function Reader({
       </div>
 
       <ReaderViewport root={readerRoot} onZoomed={setViewportZoomed}>
+        <PreferencesError />
         {viewportActive && (
           <ReaderViewportNavigation
             page={page}
@@ -1074,7 +1077,11 @@ export function Reader({
             page={page}
             enabled={inkEnabled}
             tool={inkTool}
-            onTool={setInkTool}
+            initialBrush={inkBrush}
+            onTool={(t) => {
+              setInkTool(t);
+              if (t !== "eraser") setInkBrush(t);
+            }}
             color={inkColor}
             onColor={setInkColor}
             width={inkWidth}

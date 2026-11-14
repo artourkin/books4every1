@@ -35,7 +35,7 @@ var inkColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 var strokeID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 func (s *Server) inkTarget(w http.ResponseWriter, r *http.Request) (string, int, bool) {
-	b, err := s.book(r.PathValue("id"))
+	b, err := s.book(principal(r).ID, r.PathValue("id"))
 	if err != nil {
 		fail(w, 404, "Book not found")
 		return "", 0, false

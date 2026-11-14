@@ -1,10 +1,7 @@
 package server
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -15,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -72,16 +68,24 @@ func New(cfg Config) (*Server, error) {
 	}
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
- CREATE TABLE IF NOT EXISTS books (id TEXT PRIMARY KEY,title TEXT NOT NULL,author TEXT NOT NULL,format TEXT NOT NULL,size INTEGER NOT NULL,cover INTEGER NOT NULL DEFAULT 0,color TEXT NOT NULL,added_at TEXT NOT NULL,last_read TEXT,progress REAL NOT NULL DEFAULT 0,location TEXT NOT NULL DEFAULT '',favorite INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'unread',collection TEXT NOT NULL DEFAULT '',sample INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS books (id TEXT PRIMARY KEY,title TEXT NOT NULL,author TEXT NOT NULL,format TEXT NOT NULL,size INTEGER NOT NULL,cover INTEGER NOT NULL DEFAULT 0,color TEXT NOT NULL,added_at TEXT NOT NULL,last_read TEXT,progress REAL NOT NULL DEFAULT 0,location TEXT NOT NULL DEFAULT '',favorite INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'unread',collection TEXT NOT NULL DEFAULT '',sample INTEGER NOT NULL DEFAULT 0,owner_id TEXT NOT NULL DEFAULT 'legacy');
  CREATE TABLE IF NOT EXISTS annotations (id TEXT PRIMARY KEY,book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,kind TEXT NOT NULL,quote TEXT NOT NULL,note TEXT NOT NULL,color TEXT NOT NULL,anchor TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS ink_pages (book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,page INTEGER NOT NULL,revision INTEGER NOT NULL,strokes TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(book_id,page));
- CREATE TABLE IF NOT EXISTS collections (name TEXT PRIMARY KEY);
+ CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,admin INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at INTEGER NOT NULL);
+ CREATE INDEX IF NOT EXISTS session_user ON sessions(user_id);
+ CREATE TABLE IF NOT EXISTS preferences (user_id TEXT PRIMARY KEY,data TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS collections (owner_id TEXT NOT NULL,name TEXT NOT NULL,PRIMARY KEY(owner_id,name));
  CREATE INDEX IF NOT EXISTS annotation_book ON annotations(book_id);`)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	s := &Server{db: db, cfg: cfg, mux: http.NewServeMux(), attempts: make(chan struct{}, 5)}
+	if err = s.migrateLibraries(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate private libraries: %w", err)
+	}
 	s.routes()
 	return s, nil
 }
@@ -123,14 +127,16 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "ok", "version": "0.1.0"})
 	})
-	s.mux.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, map[string]bool{"authenticated": s.authorized(r), "passwordRequired": s.cfg.Password != ""})
-	})
+	s.mux.HandleFunc("GET /api/v1/session", s.session)
 	s.mux.HandleFunc("POST /api/v1/session", s.login)
-	s.mux.HandleFunc("DELETE /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
-		http.SetCookie(w, &http.Cookie{Name: "folio_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.cfg.SecureCookie})
-		w.WriteHeader(204)
-	})
+	s.mux.HandleFunc("DELETE /api/v1/session", s.logout)
+	s.mux.HandleFunc("GET /api/v1/me/preferences", s.getPreferences)
+	s.mux.HandleFunc("PATCH /api/v1/me/preferences", s.patchPreferences)
+	s.mux.HandleFunc("POST /api/v1/me/password", s.changePassword)
+	s.mux.HandleFunc("GET /api/v1/users", s.users)
+	s.mux.HandleFunc("POST /api/v1/users", s.createUser)
+	s.mux.HandleFunc("DELETE /api/v1/users/{user}", s.deleteUser)
+	s.mux.HandleFunc("POST /api/v1/users/{user}/password", s.resetUserPassword)
 	s.mux.HandleFunc("GET /api/v1/books", s.books)
 	s.mux.HandleFunc("POST /api/v1/books", s.upload)
 	s.mux.HandleFunc("GET /api/v1/books/{id}", s.getBook)
@@ -167,59 +173,21 @@ func (s *Server) Handler() http.Handler {
 					}
 				}
 			}
-			if r.URL.Path != "/api/v1/session" && r.URL.Path != "/api/v1/health" && !s.authorized(r) {
-				fail(w, 401, "Sign in to access your library")
-				return
+			if r.URL.Path != "/api/v1/session" && r.URL.Path != "/api/v1/health" {
+				user, ok := s.identity(r)
+				if !ok {
+					fail(w, 401, "Sign in to access your library")
+					return
+				}
+				if expected := r.Header.Get("X-Folio-Profile"); expected != "" && expected != user.ID {
+					fail(w, 409, "The account changed in another tab. Reload to continue.")
+					return
+				}
+				r = withPrincipal(r, user)
 			}
 		}
 		s.mux.ServeHTTP(w, r)
 	})
-}
-func (s *Server) authorized(r *http.Request) bool {
-	if s.cfg.APIToken != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+s.cfg.APIToken)) == 1 {
-		return true
-	}
-	if s.cfg.Password == "" {
-		return true
-	}
-	c, e := r.Cookie("folio_session")
-	if e != nil {
-		return false
-	}
-	parts := strings.Split(c.Value, ".")
-	if len(parts) != 2 {
-		return false
-	}
-	expires, e := strconv.ParseInt(parts[0], 10, 64)
-	return e == nil && expires > time.Now().Unix() && hmac.Equal([]byte(parts[1]), []byte(s.signature(parts[0])))
-}
-func (s *Server) signature(v string) string {
-	h := hmac.New(sha256.New, []byte(s.cfg.Password))
-	h.Write([]byte("folio-session:" + v))
-	return hex.EncodeToString(h.Sum(nil))
-}
-func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	select {
-	case s.attempts <- struct{}{}:
-	default:
-		fail(w, 429, "Too many sign-in attempts. Try again shortly.")
-		return
-	}
-	defer func() { time.AfterFunc(time.Second, func() { <-s.attempts }) }()
-	var body struct {
-		Password string `json:"password"`
-	}
-	if !decode(w, r, &body) {
-		return
-	}
-	a, b := sha256.Sum256([]byte(body.Password)), sha256.Sum256([]byte(s.cfg.Password))
-	if subtle.ConstantTimeCompare(a[:], b[:]) != 1 {
-		fail(w, 401, "That password isn't right")
-		return
-	}
-	exp := strconv.FormatInt(time.Now().Add(30*24*time.Hour).Unix(), 10)
-	http.SetCookie(w, &http.Cookie{Name: "folio_session", Value: exp + "." + s.signature(exp), Path: "/", MaxAge: 30 * 24 * 3600, HttpOnly: true, Secure: s.cfg.SecureCookie, SameSite: http.SameSiteStrictMode})
-	respond(w, 200, map[string]bool{"authenticated": true})
 }
 
 type scanner interface{ Scan(...any) error }
@@ -229,11 +197,11 @@ func scanBook(row scanner) (Book, error) {
 	err := row.Scan(&b.ID, &b.Title, &b.Author, &b.Format, &b.Size, &b.Cover, &b.Color, &b.AddedAt, &b.LastRead, &b.Progress, &b.Location, &b.Favorite, &b.Status, &b.Collection, &b.Sample)
 	return b, err
 }
-func (s *Server) book(bid string) (Book, error) {
-	return scanBook(s.db.QueryRow("SELECT "+bookColumns+" FROM books WHERE id=?", bid))
+func (s *Server) book(ownerID, bid string) (Book, error) {
+	return scanBook(s.db.QueryRow("SELECT "+bookColumns+" FROM books WHERE id=? AND owner_id=?", bid, ownerID))
 }
 func (s *Server) books(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.db.Query("SELECT " + bookColumns + " FROM books ORDER BY added_at DESC")
+	rows, err := s.db.Query("SELECT "+bookColumns+" FROM books WHERE owner_id=? ORDER BY added_at DESC", principal(r).ID)
 	if err != nil {
 		fail(w, 500, "Could not load library")
 		return
@@ -251,7 +219,7 @@ func (s *Server) books(w http.ResponseWriter, r *http.Request) {
 	respond(w, 200, out)
 }
 func (s *Server) getBook(w http.ResponseWriter, r *http.Request) {
-	b, e := s.book(r.PathValue("id"))
+	b, e := s.book(principal(r).ID, r.PathValue("id"))
 	if e != nil {
 		fail(w, 404, "Book not found")
 		return
@@ -259,7 +227,7 @@ func (s *Server) getBook(w http.ResponseWriter, r *http.Request) {
 	respond(w, 200, b)
 }
 func (s *Server) updateBook(w http.ResponseWriter, r *http.Request) {
-	b, e := s.book(r.PathValue("id"))
+	b, e := s.book(principal(r).ID, r.PathValue("id"))
 	if e != nil {
 		fail(w, 404, "Book not found")
 		return
@@ -304,7 +272,7 @@ func (s *Server) updateBook(w http.ResponseWriter, r *http.Request) {
 		b.Collection = *p.Collection
 		if b.Collection != "" {
 			var n int
-			if s.db.QueryRow("SELECT count(*) FROM collections WHERE name=?", b.Collection).Scan(&n) != nil || n == 0 {
+			if s.db.QueryRow("SELECT count(*) FROM collections WHERE owner_id=? AND name=?", principal(r).ID, b.Collection).Scan(&n) != nil || n == 0 {
 				fail(w, 400, "Collection not found")
 				return
 			}
@@ -331,29 +299,37 @@ func (s *Server) updateBook(w http.ResponseWriter, r *http.Request) {
 			b.Status = "reading"
 		}
 	}
-	_, e = s.db.Exec(`UPDATE books SET title=?,author=?,favorite=?,status=?,collection=?,progress=?,location=?,last_read=? WHERE id=?`, b.Title, b.Author, b.Favorite, b.Status, b.Collection, b.Progress, b.Location, b.LastRead, b.ID)
+	result, e := s.db.Exec(`UPDATE books SET title=?,author=?,favorite=?,status=?,collection=?,progress=?,location=?,last_read=? WHERE id=? AND owner_id=?`, b.Title, b.Author, b.Favorite, b.Status, b.Collection, b.Progress, b.Location, b.LastRead, b.ID, principal(r).ID)
 	if e != nil {
 		fail(w, 500, "Could not save book")
+		return
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		fail(w, 404, "Book not found")
 		return
 	}
 	respond(w, 200, b)
 }
 func (s *Server) deleteBook(w http.ResponseWriter, r *http.Request) {
-	b, e := s.book(r.PathValue("id"))
+	b, e := s.book(principal(r).ID, r.PathValue("id"))
 	if e != nil {
 		fail(w, 404, "Book not found")
 		return
 	}
-	if _, e = s.db.Exec("DELETE FROM books WHERE id=?", b.ID); e != nil {
+	result, e := s.db.Exec("DELETE FROM books WHERE id=? AND owner_id=?", b.ID, principal(r).ID)
+	if e != nil {
 		fail(w, 500, "Could not delete book")
 		return
 	}
-	os.Remove(filepath.Join(s.cfg.DataDir, "books", b.ID+"."+strings.ToLower(b.Format)))
-	os.Remove(filepath.Join(s.cfg.DataDir, "books", b.ID+".cover"))
+	if count, _ := result.RowsAffected(); count == 0 {
+		fail(w, 404, "Book not found")
+		return
+	}
+	s.removeBookFiles(b)
 	w.WriteHeader(204)
 }
 func (s *Server) file(w http.ResponseWriter, r *http.Request) {
-	b, e := s.book(r.PathValue("id"))
+	b, e := s.book(principal(r).ID, r.PathValue("id"))
 	if e != nil {
 		fail(w, 404, "Book not found")
 		return
@@ -369,7 +345,7 @@ func (s *Server) file(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(s.cfg.DataDir, "books", b.ID+"."+strings.ToLower(b.Format)))
 }
 func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
-	b, e := s.book(r.PathValue("id"))
+	b, e := s.book(principal(r).ID, r.PathValue("id"))
 	if e != nil || !b.Cover {
 		http.NotFound(w, r)
 		return
@@ -377,10 +353,10 @@ func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(s.cfg.DataDir, "books", b.ID+".cover"))
 }
 func (s *Server) annotations(w http.ResponseWriter, r *http.Request) {
-	query := "SELECT id,book_id,kind,quote,note,color,anchor,created_at FROM annotations"
-	args := []any{}
+	query := "SELECT id,book_id,kind,quote,note,color,anchor,created_at FROM annotations WHERE book_id IN (SELECT id FROM books WHERE owner_id=?)"
+	args := []any{principal(r).ID}
 	if b := r.URL.Query().Get("bookId"); b != "" {
-		query += " WHERE book_id=?"
+		query += " AND book_id=?"
 		args = append(args, b)
 	}
 	rows, e := s.db.Query(query+" ORDER BY created_at DESC", args...)
@@ -403,7 +379,7 @@ func (s *Server) annotations(w http.ResponseWriter, r *http.Request) {
 	respond(w, 200, out)
 }
 func (s *Server) addAnnotation(w http.ResponseWriter, r *http.Request) {
-	if _, e := s.book(r.PathValue("id")); e != nil {
+	if _, e := s.book(principal(r).ID, r.PathValue("id")); e != nil {
 		fail(w, 404, "Book not found")
 		return
 	}
@@ -463,7 +439,7 @@ func (s *Server) updateAnnotation(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "Note is too long")
 		return
 	}
-	result, e := s.db.Exec("UPDATE annotations SET note=? WHERE id=?", p.Note, r.PathValue("id"))
+	result, e := s.db.Exec("UPDATE annotations SET note=? WHERE id=? AND book_id IN (SELECT id FROM books WHERE owner_id=?)", p.Note, r.PathValue("id"), principal(r).ID)
 	if e != nil {
 		fail(w, 500, "Could not save note")
 		return
@@ -476,7 +452,7 @@ func (s *Server) updateAnnotation(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (s *Server) deleteAnnotation(w http.ResponseWriter, r *http.Request) {
-	result, e := s.db.Exec("DELETE FROM annotations WHERE id=?", r.PathValue("id"))
+	result, e := s.db.Exec("DELETE FROM annotations WHERE id=? AND book_id IN (SELECT id FROM books WHERE owner_id=?)", r.PathValue("id"), principal(r).ID)
 	if e != nil {
 		fail(w, 500, "Could not delete annotation")
 		return
@@ -489,7 +465,7 @@ func (s *Server) deleteAnnotation(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.db.Query("SELECT name FROM collections ORDER BY name")
+	rows, e := s.db.Query("SELECT name FROM collections WHERE owner_id=? ORDER BY name", principal(r).ID)
 	if e != nil {
 		fail(w, 500, "Could not load collections")
 		return
@@ -515,7 +491,12 @@ func (s *Server) addCollection(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "Collection names must be between 1 and 80 characters")
 		return
 	}
-	if _, e := s.db.Exec("INSERT INTO collections(name) VALUES(?)", b.Name); e != nil {
+	result, err := s.db.Exec("INSERT INTO collections(owner_id,name) VALUES(?,?) ON CONFLICT(owner_id,name) DO NOTHING", principal(r).ID, b.Name)
+	if err != nil {
+		fail(w, 500, "Could not create collection")
+		return
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
 		fail(w, 409, "That collection already exists")
 		return
 	}
@@ -528,9 +509,9 @@ func (s *Server) deleteCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	_, e = tx.Exec("UPDATE books SET collection='' WHERE collection=?", r.PathValue("name"))
+	_, e = tx.Exec("UPDATE books SET collection='' WHERE owner_id=? AND collection=?", principal(r).ID, r.PathValue("name"))
 	if e == nil {
-		_, e = tx.Exec("DELETE FROM collections WHERE name=?", r.PathValue("name"))
+		_, e = tx.Exec("DELETE FROM collections WHERE owner_id=? AND name=?", principal(r).ID, r.PathValue("name"))
 	}
 	if e == nil {
 		e = tx.Commit()
