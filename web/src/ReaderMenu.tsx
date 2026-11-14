@@ -9,9 +9,9 @@ import {
   X,
   Maximize,
   Minimize,
-  PenLine,
   Check,
   ArrowLeft,
+  ChevronDown,
 } from "lucide-react";
 export function ReaderMenu({
   format,
@@ -30,6 +30,7 @@ export function ReaderMenu({
   inkEnabled,
   onInkMode,
   onLibrary,
+  onHideControls,
 }: {
   format: "PDF" | "EPUB";
   fontSize: number;
@@ -47,6 +48,7 @@ export function ReaderMenu({
   inkEnabled: boolean;
   onInkMode: () => void;
   onLibrary: () => void;
+  onHideControls: () => void;
 }) {
   return (
     <section
@@ -57,6 +59,16 @@ export function ReaderMenu({
     >
       <div className="popover-heading">
         <strong>Reader options</strong>
+        {floating && format === "PDF" && inkEnabled && (
+          <button
+            className="icon"
+            aria-label="Finish writing"
+            title="Done writing"
+            onClick={onInkMode}
+          >
+            <Check size={18} />
+          </button>
+        )}
         <button
           className="icon"
           aria-label="Close reader options"
@@ -65,28 +77,6 @@ export function ReaderMenu({
           <X size={18} />
         </button>
       </div>
-      <button
-        className="popover-action"
-        aria-label={focused ? "Exit focus mode" : "Enter fullscreen"}
-        onClick={onFocus}
-      >
-        {focused ? <Minimize size={18} /> : <Maximize size={18} />}{" "}
-        {focused
-          ? nativeFullscreen
-            ? "Exit fullscreen"
-            : "Exit focus mode"
-          : "Focus / fullscreen"}
-      </button>
-      {floating && format === "PDF" && (
-        <button
-          className="popover-action"
-          aria-label={inkEnabled ? "Finish writing" : "Draw on PDF"}
-          onClick={onInkMode}
-        >
-          {inkEnabled ? <Check size={18} /> : <PenLine size={18} />}{" "}
-          {inkEnabled ? "Done writing" : "Write on this PDF"}
-        </button>
-      )}
       {floating && (
         <button
           className="popover-action"
@@ -97,25 +87,63 @@ export function ReaderMenu({
           Back to library
         </button>
       )}
-      <button className="popover-action" onClick={() => onPanel("contents")}>
-        <List size={18} />{" "}
-        {format === "PDF" ? "Pages & navigation" : "Table of contents"}
-      </button>
-      <button className="popover-action" onClick={() => onPanel("notes")}>
-        <NotebookPen size={18} />
-        Notes and highlights
-      </button>
-      <button
-        className="popover-action"
-        disabled={bookmarkDisabled}
-        onClick={() => {
-          onBookmark();
-          onClose();
-        }}
-      >
-        <Bookmark size={18} />
-        Bookmark this page
-      </button>
+      <div className="reader-menu-grid" aria-label="Navigation and notes">
+        <button
+          aria-label={
+            format === "PDF" ? "Pages & navigation" : "Table of contents"
+          }
+          onClick={() => onPanel("contents")}
+        >
+          <List size={19} />
+          <span>{format === "PDF" ? "Pages" : "Contents"}</span>
+        </button>
+        <button
+          aria-label="Notes and highlights"
+          onClick={() => onPanel("notes")}
+        >
+          <NotebookPen size={19} />
+          <span>Notes</span>
+        </button>
+        <button
+          aria-label="Bookmark this page"
+          disabled={bookmarkDisabled}
+          onClick={() => {
+            onBookmark();
+            onClose();
+          }}
+        >
+          <Bookmark size={19} />
+          <span>Bookmark</span>
+        </button>
+      </div>
+      <div className="reader-menu-grid" aria-label="Reading appearance">
+        <button
+          aria-label={focused ? "Exit focus mode" : "Enter fullscreen"}
+          onClick={onFocus}
+        >
+          {focused ? <Minimize size={19} /> : <Maximize size={19} />}
+          <span>
+            {focused
+              ? nativeFullscreen
+                ? "Exit fullscreen"
+                : "Exit focus"
+              : "Fullscreen"}
+          </span>
+        </button>
+        {floating && (
+          <button aria-label="Hide controls" onClick={onHideControls}>
+            <ChevronDown size={19} />
+            <span>Hide</span>
+          </button>
+        )}
+        <button
+          aria-label={theme === "night" ? "Use paper theme" : "Use dark theme"}
+          onClick={onTheme}
+        >
+          {theme === "night" ? <Sun size={19} /> : <Moon size={19} />}
+          <span>{theme === "night" ? "Paper" : "Dark"}</span>
+        </button>
+      </div>
       <div className="reader-size-control">
         <span>{format === "PDF" ? "Page zoom" : "Text size"}</span>
         <button
@@ -136,14 +164,6 @@ export function ReaderMenu({
           <Plus size={17} />
         </button>
       </div>
-      <button
-        className="popover-action"
-        aria-label={theme === "night" ? "Use paper theme" : "Use dark theme"}
-        onClick={onTheme}
-      >
-        {theme === "night" ? <Sun size={18} /> : <Moon size={18} />}{" "}
-        {theme === "night" ? "Paper appearance" : "Dark appearance"}
-      </button>
     </section>
   );
 }

@@ -1,3 +1,9 @@
+import {
+  showControls,
+  finishWriting,
+  readerOptions,
+  morePenSettings,
+} from "./reader-controls";
 import { resetPreferences } from "./preferences-fixture";
 import {
   test,
@@ -92,13 +98,13 @@ test("phone PDF starts sharp, sharpens after pinch zoom, and preserves ink and t
   await open(page);
   const initial = await raster(page);
   expect(initial.width).toBeGreaterThanOrEqual(2047);
-  expect(initial.cssWidth).toBeLessThanOrEqual(396);
+  expect(initial.cssWidth).toBeCloseTo(412, 0);
   expect(initial.width / initial.cssWidth).toBeGreaterThan(3.5);
   expect(initial.alpha).toBe(255);
   await page.getByRole("button", { name: "Draw on PDF" }).click();
   await draw(page);
   const ink = await page.locator(".ink-stroke").getAttribute("d");
-  await page.getByRole("button", { name: "Finish writing" }).click();
+  await finishWriting(page);
   const text = page
     .locator(".textLayer span")
     .filter({ hasText: "A book is a quiet place" })
@@ -133,6 +139,7 @@ test("phone PDF starts sharp, sharpens after pinch zoom, and preserves ink and t
   expect(Math.max(capped.width, capped.height)).toBeLessThanOrEqual(8192);
   await client.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
   await expect.poll(async () => (await raster(page)).width).toBe(initial.width);
+  await showControls(page);
   await page.getByRole("button", { name: "Next page", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Go to page, page 2 of 2", exact: true }),
@@ -143,7 +150,7 @@ test("phone PDF starts sharp, sharpens after pinch zoom, and preserves ink and t
   await context.close();
 });
 
-test("mobile controls stay minimal with large hit targets and secondary tools on demand", async ({
+test("portrait has one row of controls and landscape has a side rail with a small palette", async ({
   browser,
   request,
 }) => {
@@ -157,79 +164,86 @@ test("mobile controls stay minimal with large hit targets and secondary tools on
   });
   const page = await context.newPage();
   await open(page);
-  await expect(page.locator(".reader-header button:visible")).toHaveCount(3);
-  await expect(page.locator(".ink-toolbar")).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Bookmark this page" }),
-  ).toHaveCount(0);
+  await expect(page.locator(".reader-header")).toBeHidden();
+  await expect(page.locator(".reader-footer")).toBeHidden();
+  expect((await page.locator(".pdf-page").boundingBox())!.y).toBe(0);
+  const dock = page.getByRole("navigation", { name: "Reading controls" });
+  expect((await dock.boundingBox())!.height).toBeLessThanOrEqual(56);
+  await page.getByRole("button", { name: "Draw on PDF", exact: true }).click();
+  await expect(dock.locator(".ink-toolbar")).toBeVisible();
+  expect((await dock.boundingBox())!.height).toBeLessThanOrEqual(56);
+  const targets = await dock.locator("button:visible").evaluateAll((nodes) =>
+    nodes.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { width: r.width, height: r.height };
+    }),
+  );
+  for (const target of targets) {
+    expect(target.width).toBeGreaterThanOrEqual(44);
+    expect(target.height).toBeGreaterThanOrEqual(44);
+  }
+  await page.getByRole("button", { name: "Pen options", exact: true }).click();
+  const palette = page.getByRole("dialog", {
+    name: "Pen options",
+    exact: true,
+  });
+  expect((await palette.boundingBox())!.height).toBeLessThanOrEqual(168);
   await expect(
     page.getByRole("checkbox", { name: "Finger drawing" }),
   ).toHaveCount(0);
-  const top = await page.locator(".pdf-page").boundingBox();
-  expect(top!.y).toBeLessThan(80);
-  await page.getByRole("button", { name: "Draw on PDF" }).click();
-  await expect(page.locator(".ink-toolbar > button")).toHaveCount(4);
-  await expect(page.getByRole("button", { name: "Amber ink" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Redo ink" })).toHaveCount(0);
-  const targets = await page
-    .locator(
-      ".reader-header button,.reader-footer button,.ink-toolbar > button",
-    )
-    .evaluateAll((nodes) =>
-      nodes.map((el) => {
-        const r = el.getBoundingClientRect();
-        return { width: r.width, height: r.height };
-      }),
-    );
-  for (const t of targets) {
-    expect(t.width).toBeGreaterThanOrEqual(44);
-    expect(t.height).toBeGreaterThanOrEqual(44);
-  }
-  await page.getByRole("button", { name: "Pen options", exact: true }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Pen options", exact: true }),
-  ).toBeVisible();
   await page.getByRole("button", { name: "Amber ink" }).click();
+  await morePenSettings(page);
   await page.getByRole("checkbox", { name: "Finger drawing" }).check();
   await page.getByRole("button", { name: "Close pen options" }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Pen options", exact: true }),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "Finish writing" }).click();
-  await page
-    .getByRole("button", { name: "Reader options", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Bookmark this page" }),
-  ).toBeVisible();
+  await finishWriting(page);
+  await readerOptions(page);
+  expect(
+    (await page
+      .getByRole("dialog", { name: "Reader options", exact: true })
+      .boundingBox())!.height,
+  ).toBeLessThanOrEqual(300);
   await page.getByRole("button", { name: "Use dark theme" }).click();
   await expect(page.locator(".reader")).toHaveClass(/theme-night/);
   await page.keyboard.press("Escape");
   await expect(
-    page.getByRole("dialog", { name: "Reader options", exact: true }),
-  ).toHaveCount(0);
-  await expect(
     page.getByRole("button", { name: "Reader options", exact: true }),
   ).toBeFocused();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
-    412,
-  );
-  await page.getByRole("button", { name: "Draw on PDF" }).click();
+  await page.getByRole("button", { name: "Draw on PDF", exact: true }).click();
   await page.getByRole("button", { name: "Pen options", exact: true }).click();
   await page.setViewportSize({ width: 915, height: 412 });
-  const options = page.getByRole("dialog", {
-    name: "Pen options",
-    exact: true,
-  });
-  await expect(options).toBeVisible();
+  await expect(page.locator(".reader-loading")).toHaveCount(0);
   await expect
     .poll(async () => {
-      const b = (await options.boundingBox())!;
-      const header = (await page.locator(".reader-header").boundingBox())!;
-      return b.y >= header.height - 1 && b.y + b.height <= 412;
+      const rail = (await dock.boundingBox())!,
+        paper = (await page.locator(".reading-area").boundingBox())!,
+        box = (await palette.boundingBox())!;
+      return (
+        rail.width <= 56 &&
+        rail.y >= 8 &&
+        rail.y + rail.height <= 404 &&
+        paper.y === 0 &&
+        paper.height === 412 &&
+        paper.x + paper.width <= rail.x &&
+        box.x + box.width < rail.x &&
+        box.y >= 8 &&
+        box.y + box.height <= 404
+      );
     })
     .toBe(true);
+  expect((await palette.boundingBox())!.height).toBeLessThanOrEqual(168);
   await page.getByRole("button", { name: "Close pen options" }).click();
+  await readerOptions(page);
+  const menu = (await page
+    .getByRole("dialog", { name: "Reader options", exact: true })
+    .boundingBox())!;
+  expect(menu.height).toBeLessThanOrEqual(300);
+  expect(menu.y).toBeGreaterThanOrEqual(8);
+  expect(menu.y + menu.height).toBeLessThanOrEqual(404);
+  await page.getByRole("button", { name: "Close reader options" }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    915,
+  );
   await context.close();
 });
 

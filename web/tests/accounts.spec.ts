@@ -1,3 +1,4 @@
+import { morePenSettings, showControls } from "./reader-controls";
 import {
   test as base,
   expect,
@@ -115,7 +116,9 @@ async function readPDF(page: Page) {
     .click();
   await expect(page.locator(".reader-loading")).toHaveCount(0);
   await page.getByRole("button", { name: "Draw on PDF", exact: true }).click();
+  await showControls(page);
   await page.getByRole("button", { name: "Pen options", exact: true }).click();
+  await morePenSettings(page);
 }
 async function backToLibrary(page: Page) {
   const close = page.getByRole("button", { name: "Close pen options" });
