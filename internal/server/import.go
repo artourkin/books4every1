@@ -47,14 +47,14 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 413, "File exceeds 100 MB")
 		return
 	}
-	b, e := s.importFile(tmp.Name(), h.Filename, format, size, false)
+	b, e := s.importFile(principal(r).ID, tmp.Name(), h.Filename, format, size, false)
 	if e != nil {
 		fail(w, 422, e.Error())
 		return
 	}
 	respond(w, 201, b)
 }
-func (s *Server) importFile(source, name, format string, size int64, sample bool) (Book, error) {
+func (s *Server) importFile(ownerID, source, name, format string, size int64, sample bool) (Book, error) {
 	bid := id()
 	b := Book{ID: bid, Title: strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)), Author: "Unknown author", Format: format, Size: size, Color: colors[int(bid[0])%len(colors)], AddedAt: now(), Status: "unread", Sample: sample}
 	var cover []byte
@@ -99,7 +99,7 @@ func (s *Server) importFile(source, name, format string, size int64, sample bool
 			return b, e
 		}
 	}
-	_, e := s.db.Exec("INSERT INTO books("+bookColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", b.ID, b.Title, b.Author, b.Format, b.Size, b.Cover, b.Color, b.AddedAt, nil, 0, "", false, "unread", "", b.Sample)
+	e := s.insertOwnedBook(ownerID, b)
 	if e != nil {
 		os.Remove(target)
 		os.Remove(filepath.Join(s.cfg.DataDir, "books", b.ID+".cover"))

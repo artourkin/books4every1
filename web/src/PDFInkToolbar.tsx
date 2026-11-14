@@ -39,7 +39,9 @@ export function PDFInkToolbar({
   optionsOpen,
   onOptions,
   onCloseOptions,
+  initialBrush = "pen",
 }: {
+  initialBrush?: "pen" | "highlighter";
   ink: ReturnType<typeof usePDFInk>;
   page: number;
   enabled: boolean;
@@ -57,7 +59,7 @@ export function PDFInkToolbar({
   onOptions: () => void;
   onCloseOptions: () => void;
 }) {
-  const lastBrush = useRef<"pen" | "highlighter">("pen");
+  const lastBrush = useRef<"pen" | "highlighter">(initialBrush);
   if (tool !== "eraser") lastBrush.current = tool;
   const BrushIcon = lastBrush.current === "highlighter" ? Highlighter : PenLine;
   const failedPage = ink.getErrorPage();

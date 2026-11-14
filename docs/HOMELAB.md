@@ -34,7 +34,7 @@ docker compose ps
 curl --fail http://192.168.1.50:8123/api/v1/health
 ```
 
-From another device on the same network, open `http://192.168.1.50:8123` or `http://server.home:8123` if your local DNS resolves that hostname to the same IP. Sign in with the password from `.env`. No router port forwarding is needed for LAN use. If a host firewall blocks access, allow the chosen TCP port from your LAN subnet using the host's existing firewall setup.
+From another device on the same network, open `http://192.168.1.50:8123` or `http://server.home:8123` if your local DNS resolves that hostname to the same IP. Sign in with the password from `.env`. Then open **Library settings → Create owner account** and choose an account username and password. The owner can add accounts; each has a private library and keeps pen and reader preferences across devices. Existing books, collections, reading progress, annotations, and ink are assigned only to the original owner. New users start with an empty library. Once accounts are enabled, use account credentials for sign-in; the generated `.env` password no longer authorizes access. No router port forwarding is needed for LAN use. If a host firewall blocks access, allow the chosen TCP port from your LAN subnet using the host's existing firewall setup.
 
 The external host port is configured by `FOLIO_PORT`. The Go server continues listening on port 8080 **inside** the container; do not change `FOLIO_ADDR` to the host's IP or external port. Bind to the specific LAN address to avoid publishing the app on other host interfaces.
 
@@ -54,3 +54,5 @@ The container restarts automatically with Docker. `docker compose down` keeps th
 For backups, stop the app, copy the complete named data volume, then restart it. See the README backup instructions. The volume includes books, SQLite metadata, notes, and handwriting. Keep `.env` separately as it contains the sign-in configuration.
 
 For HTTPS through an existing reverse proxy, bind Folio to a local/internal address appropriate for that proxy, preserve the original Host header, allow uploads of at least 101 MiB, and set `FOLIO_SECURE_COOKIE=true`. Keep it false for direct HTTP access; a secure cookie cannot be used on a normal HTTP LAN origin.
+
+For a forgotten account password, use the stdin-based [owner recovery command in the README](../README.md#run-from-source). Backups now include accounts, password hashes, session hashes, and preferences in the same SQLite database. Restoring an older backup also restores that backup’s account/session state.

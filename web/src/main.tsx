@@ -1,3 +1,11 @@
+import { SessionBoundary, notifySessionChange } from "./SessionBoundary";
+import {
+  PreferencesProvider,
+  PreferencesError,
+  usePreference,
+  usePreferences,
+} from "./preferences";
+import { AccountSettings } from "./AccountSettings";
 import { useDialogFocus } from "./useDialogFocus";
 import { NoteCard } from "./NoteCard";
 import React, { useEffect, useRef, useState, lazy, Suspense } from "react";
@@ -34,6 +42,9 @@ import {
   exportNotes,
   type Book,
   type Annotation,
+  type User,
+  type Session,
+  setRequestProfile,
 } from "./api";
 const Reader = lazy(() =>
   import("./reader").then((m) => ({ default: m.Reader })),
@@ -45,6 +56,24 @@ import "@fontsource/libre-caslon-display/latin-400.css";
 import "./style.css";
 
 function App() {
+  const preferences = usePreferences();
+  const [user, setUser] = useState<User | null>(null),
+    [accountsEnabled, setAccountsEnabled] = useState(false),
+    [username, setUsername] = useState("");
+  const [sort, setSort] = usePreference("librarySort"),
+    [layout, setLayout] = usePreference("libraryLayout");
+  const activateSession = (session: Session) => {
+    setRequestProfile(session.authenticated ? session.profileId : undefined);
+    setAuthenticated(session.authenticated);
+    setPasswordRequired(session.passwordRequired);
+    setAccountsEnabled(session.accountsEnabled);
+    setUser(session.user);
+    preferences.activate(
+      session.authenticated ? session.profileId! : null,
+      session.preferences,
+    );
+  };
+
   const [ready, setReady] = useState(false),
     [authenticated, setAuthenticated] = useState(false),
     [passwordRequired, setPasswordRequired] = useState(false),
@@ -54,8 +83,6 @@ function App() {
     [notes, setNotes] = useState<Annotation[]>([]),
     [view, setView] = useState("library"),
     [query, setQuery] = useState(""),
-    [sort, setSort] = useState("recent"),
-    [layout, setLayout] = useState("grid"),
     [format, setFormat] = useState("all");
   const [active, setActive] = useState<Book | null>(null),
     [detail, setDetail] = useState<Book | null>(null),
@@ -89,10 +116,9 @@ function App() {
     }
   };
   useEffect(() => {
-    api<{ authenticated: boolean; passwordRequired: boolean }>("/session")
+    api<Session>("/session")
       .then((s) => {
-        setAuthenticated(s.authenticated);
-        setPasswordRequired(s.passwordRequired);
+        activateSession(s);
         setReady(true);
       })
       .catch((e) => {
@@ -249,11 +275,12 @@ function App() {
             e.preventDefault();
             setBusy(true);
             try {
-              await api("/session", {
+              const session = await api<Session>("/session", {
                 method: "POST",
-                body: JSON.stringify({ password }),
+                body: JSON.stringify({ username, password }),
               });
-              setAuthenticated(true);
+              if (session.authenticated) notifySessionChange();
+              setUsername("");
               setPassword("");
               setError("");
             } catch (e) {
@@ -265,11 +292,29 @@ function App() {
         >
           <Lock size={26} />
           <h2>Welcome home.</h2>
-          <p>Enter your library password to settle in.</p>
+          <p>
+            {accountsEnabled
+              ? "Sign in to your account."
+              : "Enter your library password to settle in."}
+          </p>
+          {accountsEnabled && (
+            <label>
+              Username
+              <input
+                autoFocus
+                autoComplete="username"
+                required
+                maxLength={32}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </label>
+          )}
           <label>
-            Library password
+            {accountsEnabled ? "Password" : "Library password"}
             <input
-              autoFocus
+              autoFocus={!accountsEnabled}
+              autoComplete="current-password"
               type="password"
               required
               value={password}
@@ -300,7 +345,12 @@ function App() {
       >
         <Reader
           book={active}
-          onClose={() => {
+          onClose={(updated) => {
+            // Resume immediately from the saved position while the library refreshes.
+            if (updated)
+              setBooks((all) =>
+                all.map((book) => (book.id === updated.id ? updated : book)),
+              );
             setActive(null);
             void refresh();
           }}
@@ -318,6 +368,7 @@ function App() {
         }
       }}
     >
+      <PreferencesError />
       {mobile && (
         <div className="sidebar-scrim" onClick={() => setMobile(false)} />
       )}
@@ -680,7 +731,7 @@ function App() {
                     <select
                       aria-label="Sort books"
                       value={sort}
-                      onChange={(e) => setSort(e.target.value)}
+                      onChange={(e) => setSort(e.target.value as typeof sort)}
                     >
                       <option value="recent">Recently added</option>
                       <option value="title">Title</option>
@@ -973,6 +1024,13 @@ function App() {
                 </span>
                 <h2 id="modal-title">Your little corner.</h2>
                 <p>Folio is an open-source home for your books.</p>
+                <AccountSettings
+                  user={user}
+                  onSession={(session) => {
+                    activateSession(session);
+                    notifySessionChange(false);
+                  }}
+                />
                 <div className="settings-row">
                   <HardDrive size={20} />
                   <div>
@@ -993,14 +1051,18 @@ function App() {
                   <Lock size={20} />
                   <div>
                     <strong>
-                      {passwordRequired
-                        ? "Password protected"
-                        : "Private network mode"}
+                      {accountsEnabled
+                        ? "Account sign-in"
+                        : passwordRequired
+                          ? "Password protected"
+                          : "Private network mode"}
                     </strong>
                     <span>
-                      {passwordRequired
-                        ? "Your library requires a password."
-                        : "Set FOLIO_PASSWORD to enable sign-in."}
+                      {accountsEnabled
+                        ? "Each user keeps their own reader preferences."
+                        : passwordRequired
+                          ? "Your library requires a password."
+                          : "Create an owner account to enable individual sign-in."}
                     </span>
                   </div>
                 </div>
@@ -1048,9 +1110,24 @@ function App() {
                   <button
                     className="text-button full"
                     onClick={async () => {
-                      await api("/session", { method: "DELETE" });
-                      setAuthenticated(false);
-                      setModal(null);
+                      try {
+                        if (!(await preferences.flush()))
+                          throw new Error(
+                            "Your preferences have not saved. Retry before signing out.",
+                          );
+                        await api("/session", { method: "DELETE" });
+                        notifySessionChange();
+                        preferences.activate(null);
+                        setUser(null);
+                        setAuthenticated(false);
+                        setModal(null);
+                        setBooks([]);
+                        setNotes([]);
+                        setCollections([]);
+                        setError("");
+                      } catch (e) {
+                        handleError(e);
+                      }
                     }}
                   >
                     <LogOut size={16} />
@@ -1307,4 +1384,10 @@ function BookDetails({
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <SessionBoundary>
+    <PreferencesProvider>
+      <App />
+    </PreferencesProvider>
+  </SessionBoundary>,
+);
