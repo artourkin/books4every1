@@ -1,3 +1,4 @@
+import { useCompactReader } from "./useReaderLayout";
 import { usePreference, usePreferences, PreferencesError } from "./preferences";
 import { ReaderMenu } from "./ReaderMenu";
 import { ReaderViewport, ReaderViewportNavigation } from "./ReaderViewport";
@@ -5,11 +6,17 @@ import { useReaderFullscreen } from "./useReaderFullscreen";
 import { pdfOutputScale, usePDFDisplayScale } from "./pdfRendering";
 import "./reader.css";
 import { PDFInkLayer } from "./PDFInkLayer";
-import { PDFInkToolbar } from "./PDFInkToolbar";
+import { PDFInkToolbar, PDFInkStatus } from "./PDFInkToolbar";
 import { usePDFInk } from "./usePDFInk";
 import type { PageSize } from "./ink";
 import { useDialogFocus } from "./useDialogFocus";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import ePub from "epubjs";
 import * as pdfjs from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -105,7 +112,8 @@ export function Reader({
   const [readerRoot, setReaderRoot] = useState<HTMLDivElement | null>(null);
   const fullscreen = useReaderFullscreen(readerRoot);
   const [viewportZoomed, setViewportZoomed] = useState(false);
-  const viewportActive = fullscreen.focused || viewportZoomed;
+  const compactScreen = useCompactReader();
+  const viewportActive = compactScreen || fullscreen.focused || viewportZoomed;
   const [controlsShown, setControlsShown] = useState(true);
   const [activity, setActivity] = useState(0);
   const showControls = useCallback(() => {
@@ -113,11 +121,11 @@ export function Reader({
     setActivity((n) => n + 1);
   }, []);
   useEffect(() => {
-    setControlsShown(true);
     if (
-      !fullscreen.focused ||
-      viewportZoomed ||
-      inkEnabled ||
+      !viewportActive ||
+      (!compactScreen && (viewportZoomed || inkEnabled)) ||
+      loading ||
+      inkBusy ||
       popover ||
       panel ||
       selection
@@ -130,15 +138,28 @@ export function Reader({
     }, 3500);
     return () => clearTimeout(timeout);
   }, [
-    fullscreen.focused,
+    viewportActive,
+    compactScreen,
     viewportZoomed,
     inkEnabled,
+    inkBusy,
+    loading,
     popover,
     panel,
     selection,
     activity,
     readerRoot,
   ]);
+  const pageActivity = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (inkBusy) return;
+    const target = event.target as Element;
+    if (
+      !compactScreen ||
+      target.closest(".reader-viewport-ui,.reader-header,.reader-footer") ||
+      !inkEnabled
+    )
+      showControls();
+  };
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || popover || selection) return;
@@ -676,6 +697,10 @@ export function Reader({
       inkEnabled={inkEnabled}
       onInkMode={() => changeInkMode(!inkEnabled)}
       onLibrary={() => void close()}
+      onHideControls={() => {
+        setPopover(null);
+        setControlsShown(false);
+      }}
     />
   );
   const readerPanel = panel && (
@@ -894,13 +919,36 @@ export function Reader({
       </button>
     </div>
   );
+  const inkControls = book.format === "PDF" && (
+    <PDFInkToolbar
+      compact={viewportActive}
+      ink={ink}
+      enabled={inkEnabled}
+      tool={inkTool}
+      initialBrush={inkBrush}
+      onTool={(t) => {
+        setInkTool(t);
+        if (t !== "eraser") setInkBrush(t);
+      }}
+      color={inkColor}
+      onColor={setInkColor}
+      width={inkWidth}
+      onWidth={inkTool === "highlighter" ? setMarkerWidth : setPenWidth}
+      drawWithTouch={drawWithTouch}
+      onTouch={setDrawWithTouch}
+      busy={inkBusy}
+      optionsOpen={popover === "ink"}
+      onOptions={() => setPopover(popover === "ink" ? null : "ink")}
+      onCloseOptions={() => setPopover(null)}
+    />
+  );
   return (
     <div
       ref={setReaderRoot}
       tabIndex={-1}
-      className={`reader theme-${theme}${fullscreen.focused ? " reader-focused" : ""}${viewportZoomed ? " reader-zoomed" : ""}`}
-      onPointerDown={showControls}
-      onPointerUp={showControls}
+      className={`reader theme-${theme}${fullscreen.focused ? " reader-focused" : ""}${viewportZoomed ? " reader-zoomed" : ""}${compactScreen ? " reader-mobile" : ""}`}
+      onPointerDown={pageActivity}
+      onPointerUp={pageActivity}
       onKeyDown={showControls}
     >
       <header
@@ -978,7 +1026,10 @@ export function Reader({
                   width={inkWidth}
                   drawWithTouch={drawWithTouch}
                   onChange={ink.change}
-                  onActive={setInkBusy}
+                  onActive={(active) => {
+                    setInkBusy(active);
+                    if (active && compactScreen) setControlsShown(false);
+                  }}
                   onError={setError}
                 />
                 {notes
@@ -1067,32 +1118,21 @@ export function Reader({
             onMove={move}
             onPage={() => openPanel("contents")}
             onOptions={() => setPopover(popover === "reader" ? null : "reader")}
-            shown={controlsShown || viewportZoomed || inkEnabled}
+            writing={inkEnabled}
+            tool={inkTool}
+            tools={inkControls}
+            onWrite={() => changeInkMode(true)}
+            shown={controlsShown}
             onShow={showControls}
           />
         )}
+        {!viewportActive && inkControls}
         {book.format === "PDF" && (
-          <PDFInkToolbar
+          <PDFInkStatus
             ink={ink}
             page={page}
-            enabled={inkEnabled}
-            tool={inkTool}
-            initialBrush={inkBrush}
-            onTool={(t) => {
-              setInkTool(t);
-              if (t !== "eraser") setInkBrush(t);
-            }}
-            color={inkColor}
-            onColor={setInkColor}
-            width={inkWidth}
-            onWidth={inkTool === "highlighter" ? setMarkerWidth : setPenWidth}
-            drawWithTouch={drawWithTouch}
-            onTouch={setDrawWithTouch}
             busy={inkBusy}
             onReviewPage={setPage}
-            optionsOpen={popover === "ink"}
-            onOptions={() => setPopover(popover === "ink" ? null : "ink")}
-            onCloseOptions={() => setPopover(null)}
           />
         )}
         {viewportActive && readerMenu}
