@@ -1,3 +1,4 @@
+import { showControls } from "./reader-controls";
 import { resetPreferences } from "./preferences-fixture";
 import {
   test,
@@ -35,6 +36,7 @@ async function openPDF(page: Page, request: APIRequestContext) {
   await expect(page.locator(".ink-save-state")).toHaveText("Ink saved");
 }
 async function focus(page: Page) {
+  await showControls(page);
   await page
     .getByRole("button", { name: "Reader options", exact: true })
     .click();
@@ -66,6 +68,7 @@ async function controlsInsideViewport(
 // CDP touch coordinates start at the visual viewport; locator.click uses the
 // layout viewport after pinch zoom. Send a real touch at the visible center.
 async function tap(page: Page, name: string) {
+  if (name !== "Show reading controls") await showControls(page);
   const button = page.getByRole("button", { name, exact: true });
   await expect(button).toBeVisible();
   await expect(button).toBeEnabled();
@@ -130,6 +133,18 @@ test("fullscreen uses the entire page, hides idle controls, and follows browser 
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Show reading controls" }).click();
   await turn(page, 2);
+  await page.getByRole("button", { name: "Draw on PDF", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Reader options", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Hide controls", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Show reading controls" }),
+  ).toBeVisible();
+  await expect(page.locator(".pdf-ink-layer")).toHaveClass(/ink-enabled/);
+  await showControls(page);
   await page.evaluate(() => document.exitFullscreen());
   await expect(page.locator(".reader")).not.toHaveClass(/reader-focused/);
   await expect(page.locator(".reader-header")).toBeVisible();
@@ -183,6 +198,7 @@ test("pinch-zoomed phone keeps reachable page buttons and pen tools, without los
     xDistance: -90,
     gestureSourceType: "touch",
   });
+  await showControls(page);
   await controlsInsideViewport(page);
   await controlsInsideViewport(page, ".ink-toolbar");
   const physicalTarget = await page
@@ -269,10 +285,8 @@ test("focus survives fullscreen rejection, supports writing, and exits with Esca
   await expect(page.locator(".reader")).toHaveClass(/reader-focused/);
   await page.keyboard.press("Escape");
   await expect(page.locator(".reader")).not.toHaveClass(/reader-focused/);
-  await expect(
-    page.getByRole("button", { name: "Finish writing", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator(".reader-header")).toBeVisible();
+  await expect(page.locator(".ink-toolbar")).toBeVisible();
+  await expect(page.locator(".reader-header")).toBeHidden();
   await context.close();
 });
 
@@ -353,6 +367,10 @@ test("phone fullscreen preserves page zoom through page turns and keeps its exit
   await expect
     .poll(() => page.evaluate(() => document.fullscreenElement === null))
     .toBe(true);
-  await expect(page.locator(".reader-header")).toBeVisible();
+  await expect(page.locator(".reader-header")).toBeHidden();
+  await showControls(page);
+  await expect(
+    page.getByRole("navigation", { name: "Reading controls" }),
+  ).toBeVisible();
   await context.close();
 });

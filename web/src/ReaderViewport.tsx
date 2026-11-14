@@ -1,6 +1,15 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MoreHorizontal,
+  PenLine,
+  Highlighter,
+  Eraser,
+} from "lucide-react";
+
+import type { InkTool } from "./ink";
 
 // Fixed UI uses visual-viewport coordinates, compensating for browser pinch zoom.
 // This also keeps descendants inside the element promoted by requestFullscreen.
@@ -69,6 +78,10 @@ export function ReaderViewportNavigation({
   onOptions,
   shown,
   onShow,
+  writing,
+  tools,
+  onWrite,
+  tool,
 }: {
   page: number;
   pages: number;
@@ -82,19 +95,44 @@ export function ReaderViewportNavigation({
   onOptions: () => void;
   shown: boolean;
   onShow: () => void;
+  writing: boolean;
+  tools: ReactNode;
+  onWrite: () => void;
+  tool: InkTool;
 }) {
   if (!shown)
     return (
       <button
         className="icon reader-focus-reveal"
         aria-label="Show reading controls"
+        disabled={busy}
+        title={writing ? `${tool} · Show controls` : "Show controls"}
+        aria-description={writing ? `${tool} active` : undefined}
         onClick={onShow}
       >
-        <MoreHorizontal size={20} />
+        {writing ? (
+          tool === "eraser" ? (
+            <Eraser size={20} />
+          ) : tool === "highlighter" ? (
+            <Highlighter size={20} />
+          ) : (
+            <PenLine size={20} />
+          )
+        ) : (
+          <MoreHorizontal size={20} />
+        )}
       </button>
     );
   return (
-    <nav className="reader-floating-navigation" aria-label="Reading controls">
+    <nav
+      className={`reader-floating-navigation ${writing ? "reader-writing-controls" : ""}`}
+      aria-label="Reading controls"
+    >
+      {pdf && (
+        <span className="sr-only" aria-live="polite">
+          Page {page} of {pages}
+        </span>
+      )}
       <button
         className="icon"
         aria-label="Previous page"
@@ -123,6 +161,18 @@ export function ReaderViewportNavigation({
       >
         <ChevronRight size={20} />
       </button>
+      {pdf && !writing && (
+        <button
+          className="icon"
+          aria-label="Draw on PDF"
+          title="Write"
+          onClick={onWrite}
+          disabled={loading || busy}
+        >
+          <PenLine size={20} />
+        </button>
+      )}
+      {tools}
       <button
         className="icon"
         aria-label="Reader options"

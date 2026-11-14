@@ -1,3 +1,8 @@
+import {
+  morePenSettings,
+  finishWriting,
+  showControls,
+} from "./reader-controls";
 import { resetPreferences } from "./preferences-fixture";
 import {
   test,
@@ -39,6 +44,7 @@ async function visitPDF(page: Page) {
   await page.getByRole("button", { name: "Draw on PDF", exact: true }).click();
 }
 async function penOptions(page: Page) {
+  await showControls(page);
   if (
     !(await page
       .getByRole("dialog", { name: "Pen options", exact: true })
@@ -47,6 +53,7 @@ async function penOptions(page: Page) {
     await page
       .getByRole("button", { name: "Pen options", exact: true })
       .click();
+  await morePenSettings(page);
 }
 let pointer = 10;
 async function stroke(page: Page, type = "pen", y = 0.25) {
@@ -207,9 +214,7 @@ test("touch is opt-in, palm touches do not ink, cancelled strokes are discarded,
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     390,
   );
-  await page
-    .getByRole("button", { name: "Finish writing", exact: true })
-    .click();
+  await finishWriting(page);
   await expect(page.locator(".pdf-ink-layer")).not.toHaveClass(/ink-enabled/);
 });
 test("failed saves keep ink visible, offer recovery, block accidental exit, and retry safely", async ({
