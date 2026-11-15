@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/folio-reader/folio"
 	"io"
 	"net/http"
 	"net/url"
@@ -125,7 +126,7 @@ func decodeSized(w http.ResponseWriter, r *http.Request, v any, limit int64) boo
 }
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, map[string]string{"status": "ok", "version": "0.1.0"})
+		respond(w, 200, map[string]string{"status": "ok", "version": folio.Version(), "revision": folio.Revision, "builtAt": folio.BuiltAt})
 	})
 	s.mux.HandleFunc("GET /api/v1/session", s.session)
 	s.mux.HandleFunc("POST /api/v1/session", s.login)

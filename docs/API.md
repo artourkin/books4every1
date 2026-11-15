@@ -25,7 +25,7 @@ curl -H "Authorization: Bearer $FOLIO_API_TOKEN" -F file=@book.epub http://local
 
 | Method | Path | Request / result |
 | --- | --- | --- |
-| GET | `/health` | Status and version; no authentication |
+| GET | `/health` | Status, build version, source revision, and build timestamp; no authentication |
 | GET, POST, DELETE | `/session` | Authentication described above |
 | GET | `/me/preferences` | Current profile's preferences |
 | PATCH | `/me/preferences` | Atomic partial preference update; returns complete preferences |

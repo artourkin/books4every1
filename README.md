@@ -21,6 +21,12 @@ Folio is a web-first reader with private user accounts for **DRM-free EPUB and P
 
 ## Self-host with Docker
 
+Versioned builds are available from [GitHub Releases](https://github.com/artourkin/books4every1/releases). Each release includes Linux amd64/arm64 images, Docker archives, checksums, a Compose file pinned to that version, and upgrade commands. PRs publish prereleases for testing; merging publishes the stable version. The `latest` image follows stable releases only.
+
+For a fresh installation, download a release's `compose.yaml` and `folio.env.example`, rename the latter to `.env`, set a long unique password, then run `docker compose up -d`. The Docker archives can be loaded with `docker load -i FILE.tar.gz` when registry access is unavailable. Keep the same installation directory and Compose project name when upgrading so the existing data volume is reused.
+
+To build from source instead:
+
 ```sh
 cp .env.example .env
 # Edit .env and set a long, unique FOLIO_PASSWORD.
@@ -30,6 +36,8 @@ docker compose up -d --build
 Open **http://localhost:8080**. The default Compose setup binds to loopback. Put an HTTPS reverse proxy in front of it for remote access, preserve the original `Host` header, and set `FOLIO_SECURE_COOKIE=true` when using HTTPS. Allow request bodies of at least 101 MiB at the proxy.
 
 For access from other devices on your home network, follow the [homelab deployment guide](docs/HOMELAB.md). Compose host binding and port are configurable with `FOLIO_BIND_ADDR` and `FOLIO_PORT`; the defaults remain `127.0.0.1:8080`.
+
+Existing checkouts can select a prebuilt version by setting `FOLIO_IMAGE` in `.env` to the exact image shown in its release notes, then running `docker compose pull folio` and `docker compose up -d --no-build folio`. Back up the data volume before upgrading; changing the image back does not undo database migrations. `curl http://localhost:8080/api/v1/health` reports the actual running version and source revision.
 
 The `folio-data` named volume contains the SQLite database and original books. The image runs as an unprivileged user with a read-only root filesystem. A fresh instance starts empty; choose the sample library from the empty state or library settings to explore.
 

@@ -2,6 +2,12 @@
 
 Use Go 1.24+ and Node.js 24+. Start with the source setup in README.md.
 
+Every PR prepares a release. Increase `VERSION` above the base branch, synchronize the frontend package and lockfile versions, and add its `CHANGELOG.md` section. Run `node --test scripts/release.test.mjs` and `node scripts/release.mjs plan` to check release metadata locally. CI also checks the version against the base commit.
+
+After application checks pass, same-repository PRs build and smoke-test native Linux amd64 and arm64 Docker images. The workflow publishes a prerelease whose version includes the PR number and commit, with immutable published assets, Docker archives, checksums, and deployment instructions. Fork PRs run source checks; maintainers can prepare a same-repository branch to publish a prerelease without exposing write credentials to fork code. After merge, the workflow publishes the stable version; a serialized promotion job selects the highest published stable version for `latest`. Published releases are preserved on workflow reruns; incomplete drafts can resume uploads.
+
+The first container package may need to be made public once in GitHub's package settings for anonymous GHCR pulls. Docker archives in public GitHub Releases remain available without registry access. Do not add registry tokens to the repository.
+
 ```sh
 go test -race ./...
 go vet ./...
