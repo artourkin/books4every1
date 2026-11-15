@@ -9,3 +9,5 @@ Every PR must prepare a release, as requested by the maintainer:
 - The workflow publishes Linux amd64/arm64 images, smoke-tests them, and attaches Docker archives, checksums, and deployment files. The stable release is published automatically after merge; preparing a PR does not authorize merging it or changing a running homelab.
 
 Preserve per-user isolation of books, files, collections, preferences, and annotations. Keep previews and test servers on loopback with temporary data. Do not include personal books, databases, passwords, or private keys in commits or release artifacts.
+
+Use reserved documentation examples such as `reader.example.test`, `192.0.2.10`, and port 8080. Do not copy personal deployment endpoints, home directories, or email addresses from a conversation into source files, documentation, PR text, or release notes. Run `node scripts/check-public-content.mjs`; CI also checks new history blobs so adding and then deleting private configuration in a PR does not hide it from the check. Use the contributor's GitHub noreply identity for commits.

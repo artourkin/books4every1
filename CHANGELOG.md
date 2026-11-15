@@ -4,6 +4,7 @@ Each PR prepares a versioned release. PR images are prereleases; merging publish
 
 ## 0.2.0
 
+- Use generic deployment examples and check source/history for private configuration before publishing releases.
 - Add versioned Docker images for Linux amd64 and arm64, tested before publication.
 - Publish a GitHub prerelease for each PR revision, with downloadable Docker images, checksums, image digests, and deployment instructions.
 - Publish the stable version and update the `latest` image after merge.

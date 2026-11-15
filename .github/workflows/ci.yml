@@ -29,6 +29,10 @@ jobs:
         with:
           node-version: 24
       - run: node --test scripts/release.test.mjs
+      - run: node --test scripts/check-public-content.test.mjs
+      - run: node scripts/check-public-content.mjs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
       - id: plan
         run: node scripts/release.mjs plan
         env:

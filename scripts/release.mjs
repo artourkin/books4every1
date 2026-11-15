@@ -216,7 +216,7 @@ Digest: \`${process.env.IMAGE_DIGEST}\` (Linux amd64 and arm64). Source: [\`${id
 
 ### Upgrade an existing Compose installation
 
-Run these commands from your existing installation directory, using the same Compose project name and data volume. Back up first; changing the image back does not reverse database migrations. The downloaded file pins this exact version and keeps your existing \`.env\`, LAN binding, port (8080), password, and volume.
+Run these commands from your existing installation directory, using the same Compose project name and data volume. Back up first; changing the image back does not reverse database migrations. The downloaded file pins this exact version and keeps your existing \`.env\`, configured host binding and port, password, and volume.
 
 \`\`\`sh
 curl -fL ${url}/compose.yaml -o compose.release.yaml
