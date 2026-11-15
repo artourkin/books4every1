@@ -68,13 +68,11 @@ export function PDFInkLayer({
     gesture = useRef<Gesture | null>(null),
     frame = useRef(0),
     lastPen = useRef(-Infinity);
-  const pan = useRef<{ id: number; x: number; y: number } | null>(null);
   const activeCallback = useRef(onActive);
   activeCallback.current = onActive;
   const clear = useCallback(() => {
     cancelAnimationFrame(frame.current);
     gesture.current = null;
-    pan.current = null;
     draft.current?.setAttribute("d", "");
     svg.current
       ?.querySelectorAll<SVGPathElement>("[data-stroke-id]")
@@ -164,9 +162,8 @@ export function PDFInkLayer({
   const down = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (!enabled) return;
     if (e.pointerType === "touch" && !drawWithTouch) {
-      if (gesture.current || performance.now() - lastPen.current < 650) return;
-      pan.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      capture(e);
+      // The document owns finger panning and page swipes. Keep ink pointers
+      // separate so navigation cannot turn a pen stroke into a page gesture.
       return;
     }
     if (
@@ -180,7 +177,6 @@ export function PDFInkLayer({
     e.preventDefault();
     e.stopPropagation();
     window.getSelection()?.removeAllRanges();
-    pan.current = null;
     if (e.pointerType === "pen") lastPen.current = performance.now();
     const start = point(e.nativeEvent);
     gesture.current = {
@@ -211,19 +207,9 @@ export function PDFInkLayer({
     if (e.pointerId === gesture.current?.pointerId) {
       e.preventDefault();
       append(e.nativeEvent);
-    } else if (pan.current?.id === e.pointerId && !gesture.current) {
-      const previous = pan.current;
-      svg.current
-        ?.closest(".pdf-document")
-        ?.scrollBy(previous.x - e.clientX, previous.y - e.clientY);
-      pan.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
     }
   };
   const up = (e: ReactPointerEvent<SVGSVGElement>) => {
-    if (pan.current?.id === e.pointerId) {
-      pan.current = null;
-      return;
-    }
     if (gesture.current?.pointerId !== e.pointerId) return;
     append(e.nativeEvent);
     const g = gesture.current;
@@ -256,18 +242,10 @@ export function PDFInkLayer({
       onPointerMove={move}
       onPointerUp={up}
       onPointerCancel={(e) => {
-        if (
-          e.pointerId === gesture.current?.pointerId ||
-          e.pointerId === pan.current?.id
-        )
-          clear();
+        if (e.pointerId === gesture.current?.pointerId) clear();
       }}
       onLostPointerCapture={(e) => {
-        if (
-          e.pointerId === gesture.current?.pointerId ||
-          e.pointerId === pan.current?.id
-        )
-          clear();
+        if (e.pointerId === gesture.current?.pointerId) clear();
       }}
     >
       {strokes.map((s) => (

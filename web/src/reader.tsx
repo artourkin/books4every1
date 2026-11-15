@@ -3,6 +3,7 @@ import { usePreference, usePreferences, PreferencesError } from "./preferences";
 import { ReaderMenu } from "./ReaderMenu";
 import { ReaderViewport, ReaderViewportNavigation } from "./ReaderViewport";
 import { useReaderFullscreen } from "./useReaderFullscreen";
+import { usePDFSwipe } from "./usePDFSwipe";
 import { pdfOutputScale, usePDFDisplayScale } from "./pdfRendering";
 import "./reader.css";
 import { PDFInkLayer } from "./PDFInkLayer";
@@ -492,15 +493,8 @@ export function Reader({
             ? previous
             : { width: initial.width, height: initial.height },
         );
-        if (differentPage && renderedPDFPage.current !== null) {
-          // Keep the user's magnification, but start the next page at its beginning.
-          mount.current?.scrollTo({ top: 0, left: 0, behavior: "instant" });
-          pdfPage.current?.scrollIntoView({
-            block: "start",
-            inline: "start",
-            behavior: "instant",
-          });
-        }
+        // Keep the scroll container and browser visual viewport in place when
+        // changing pages. Smaller pages naturally clamp to their own bounds.
         renderedPDFPage.current = page;
         setLoading(false);
         if (differentPage)
@@ -569,6 +563,17 @@ export function Reader({
     },
     [book.format, pages, inkBusy],
   );
+  usePDFSwipe(mount, {
+    enabled:
+      book.format === "PDF" &&
+      !loading &&
+      !inkBusy &&
+      !popover &&
+      !panel &&
+      !(inkEnabled && drawWithTouch),
+    writing: inkEnabled,
+    onTurn: move,
+  });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest("input,textarea,select,button"))

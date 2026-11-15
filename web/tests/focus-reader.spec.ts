@@ -207,18 +207,25 @@ test("pinch-zoomed phone keeps reachable page buttons and pen tools, without los
       (el) => el.getBoundingClientRect().width * window.visualViewport!.scale,
     );
   expect(physicalTarget).toBeCloseTo(44, 0);
+  const previousPosition = await page.evaluate(() => {
+    const r = document.querySelector(".pdf-page")!.getBoundingClientRect();
+    return {
+      x: r.left - visualViewport!.offsetLeft,
+      y: r.top - visualViewport!.offsetTop,
+    };
+  });
   await turn(page, 2, true);
   await expect(page.locator(".ink-stroke")).toHaveCount(0);
   await expect
     .poll(() =>
-      page.evaluate(() => {
+      page.evaluate((previousPosition) => {
         const r = document.querySelector(".pdf-page")!.getBoundingClientRect(),
           v = visualViewport!;
         return (
-          Math.abs(r.top - v.offsetTop) < 1 &&
-          Math.abs(r.left - v.offsetLeft) < 1
+          Math.abs(r.top - v.offsetTop - previousPosition.y) < 1 &&
+          Math.abs(r.left - v.offsetLeft - previousPosition.x) < 1
         );
-      }),
+      }, previousPosition),
     )
     .toBe(true);
   expect(await page.evaluate(() => window.visualViewport!.scale)).toBeCloseTo(
