@@ -37,3 +37,5 @@ Account browser tests start a separate temporary server on loopback port 8082 fo
 Private-library migration tests open a database with the previous schema and multiple administrators, verify that only the original owner receives existing content, and reopen it to check idempotence. Browser tests verify that a login/logout in another tab removes the previous account’s private view.
 
 Mobile layout tests cover a single portrait dock, landscape side rail, compact pen palettes, 44-pixel targets, viewports down to 915×240 and 320×740, automatic tucking during strokes/idle reading, and navigation while pinch-zoomed. These checks use Chromium emulation; physical phone/stylus verification remains useful.
+
+PDF navigation tests use CDP touch input to exercise horizontal flicks in reading and pen-writing modes, slow panning, and position preservation with both page zoom and browser pinch zoom. Pointer-only ink tests continue to cover pressure and palm handling separately.
