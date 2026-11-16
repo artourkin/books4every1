@@ -21,7 +21,7 @@ test("downloaded Compose files pin the image without a source build and retain t
     new URL("../compose.yaml", import.meta.url),
     "utf8",
   );
-  const image = "ghcr.io/artourkin/books4every1:0.2.0-pr.7.gaaaaaaaaaaaa";
+  const image = "ghcr.io/artourkin/folio:0.2.0-pr.7.gaaaaaaaaaaaa";
   const compose = composeForRelease(source, image);
   assert.ok(compose.includes(`image: ${image}`));
   assert.ok(!compose.includes("FOLIO_IMAGE"));
@@ -68,12 +68,12 @@ test("release preparation requires synchronized manifests and nonempty notes", (
 test("PR image versions identify their exact source and never use the stable tag", () => {
   const source = {
     version: "0.2.0",
-    repository: "Artourkin/Books4Every1",
+    repository: "Artourkin/Folio",
     sha: "a".repeat(40),
   };
   const preview = releaseIdentity({ ...source, pr: 7 });
   assert.equal(preview.version, "0.2.0-pr.7.gaaaaaaaaaaaa");
-  assert.equal(preview.image, "ghcr.io/artourkin/books4every1");
+  assert.equal(preview.image, "ghcr.io/artourkin/folio");
   assert.equal(preview.prerelease, true);
   assert.notEqual(preview.tag, releaseIdentity(source).tag);
   assert.notEqual(

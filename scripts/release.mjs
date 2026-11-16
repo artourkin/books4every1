@@ -132,7 +132,7 @@ async function plan() {
   }).trim();
   const identity = releaseIdentity({
     version,
-    repository: process.env.GITHUB_REPOSITORY || "artourkin/books4every1",
+    repository: process.env.GITHUB_REPOSITORY || "artourkin/folio",
     sha,
     pr: isPR ? event.number : undefined,
   });

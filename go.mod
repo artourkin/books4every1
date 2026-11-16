@@ -1,4 +1,4 @@
-module github.com/folio-reader/folio
+module github.com/artourkin/folio
 
 go 1.24.0
 

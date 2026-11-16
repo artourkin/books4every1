@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/folio-reader/folio"
+	"github.com/artourkin/folio"
 	"io"
 	"net/http"
 	"net/url"

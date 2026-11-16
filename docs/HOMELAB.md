@@ -4,7 +4,7 @@ Run these steps in an SSH session on your Docker host. You need Bash, curl, Dock
 
 ## Install a built release
 
-Choose a version from [GitHub Releases](https://github.com/artourkin/books4every1/releases). Every PR has a prerelease for testing; stable releases are published after merge. Each release contains `compose.yaml`, `folio.env.example`, `SHA256SUMS`, and built Docker archives for both architectures.
+Choose a version from [GitHub Releases](https://github.com/artourkin/folio/releases). Every PR has a prerelease for testing; stable releases are published after merge. Each release contains `compose.yaml`, `folio.env.example`, `SHA256SUMS`, and built Docker archives for both architectures. New images use `ghcr.io/artourkin/folio`.
 
 For a fresh installation, create a permanent directory such as `~/folio`, download the release's Compose and environment files there, copy `folio.env.example` to `.env`, and set mode 600. Set a unique `FOLIO_PASSWORD`, your server's LAN IP in `FOLIO_BIND_ADDR`, and `FOLIO_PORT=8080`, then run `docker compose up -d`. The release Compose file pins its image version and requires no source checkout or build.
 
@@ -25,7 +25,7 @@ The first GHCR package may need its visibility changed to **Public** in the repo
 Use `main` for the current app, including PDF handwriting. To test an unmerged pull request, replace `main` with its feature branch and switch back to `main` after the PR is merged.
 
 ```sh
-git clone --branch main https://github.com/artourkin/books4every1.git folio
+git clone --branch main https://github.com/artourkin/folio.git folio
 cd folio
 ./scripts/install-homelab.sh --port 8080
 ```
@@ -55,6 +55,14 @@ curl --fail http://192.0.2.10:8080/api/v1/health
 From another device on the same network, open `http://192.0.2.10:8080` or `http://reader.example.test:8080` if your local DNS resolves that hostname to the same IP. Sign in with the password from `.env`. Then open **Library settings → Create owner account** and choose an account username and password. The owner can add accounts; each has a private library and keeps pen and reader preferences across devices. Existing books, collections, reading progress, annotations, and ink are assigned only to the original owner. New users start with an empty library. Once accounts are enabled, use account credentials for sign-in; the generated `.env` password no longer authorizes access. No router port forwarding is needed for LAN use. If a host firewall blocks access, allow the chosen TCP port from your LAN subnet using the host's existing firewall setup.
 
 The external host port is configured by `FOLIO_PORT`. The Go server continues listening on port 8080 **inside** the container; do not change `FOLIO_ADDR` to the host's IP or external port. Bind to the specific LAN address to avoid publishing the app on other host interfaces.
+
+For an existing source checkout after the repository rename, update its remote:
+
+```sh
+git remote set-url origin https://github.com/artourkin/folio.git
+```
+
+For Docker upgrades, download the new release's Compose file into the existing installation directory. Its pinned image selects the new registry path. Older releases retain their original image references; keep the Compose project name and data volume to preserve your library.
 
 ## Verify and maintain
 

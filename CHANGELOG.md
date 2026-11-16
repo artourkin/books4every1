@@ -2,6 +2,12 @@
 
 Each PR prepares a versioned release. PR images are prereleases; merging publishes the stable version.
 
+## 0.2.1
+
+- Update clone/release links, image examples, Docker source labels, and local release defaults for the renamed `artourkin/folio` repository.
+- Use the canonical Go module path `github.com/artourkin/folio` and matching Docker build metadata linker flags.
+- Publish new images under `ghcr.io/artourkin/folio`. Download the new release's Compose file when upgrading; keep the existing installation directory, Compose project name, and data volume. Previously published releases keep their original image references. No database migration is needed for the rename.
+
 ## 0.2.0
 
 - Use generic deployment examples and check source/history for private configuration before publishing releases.
