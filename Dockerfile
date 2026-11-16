@@ -23,14 +23,14 @@ ARG VERSION
 ARG REVISION=unknown
 ARG CREATED=unknown
 RUN mkdir /data && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
-    -ldflags="-s -w -X github.com/folio-reader/folio.releaseVersion=${VERSION:-$(cat VERSION)} -X github.com/folio-reader/folio.Revision=$REVISION -X github.com/folio-reader/folio.BuiltAt=$CREATED" \
+    -ldflags="-s -w -X github.com/artourkin/folio.releaseVersion=${VERSION:-$(cat VERSION)} -X github.com/artourkin/folio.Revision=$REVISION -X github.com/artourkin/folio.BuiltAt=$CREATED" \
     -o /folio ./cmd/folio
 
 FROM gcr.io/distroless/static-debian12:nonroot
 ARG VERSION
 ARG REVISION=unknown
 ARG CREATED
-ARG SOURCE_URL=https://github.com/artourkin/books4every1
+ARG SOURCE_URL=https://github.com/artourkin/folio
 LABEL org.opencontainers.image.title="Folio" \
     org.opencontainers.image.description="Self-hosted EPUB and PDF reader with private libraries and handwriting" \
     org.opencontainers.image.source=$SOURCE_URL \
