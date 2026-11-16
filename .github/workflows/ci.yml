@@ -1,10 +1,50 @@
 name: Checks
-on: [push, pull_request]
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  version:
+    name: Version and changelog
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      image: ${{ steps.plan.outputs.image }}
+      revision: ${{ steps.plan.outputs.revision }}
+      created: ${{ steps.plan.outputs.created }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+      published: ${{ steps.plan.outputs.published }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test scripts/release.test.mjs
+      - run: node --test scripts/check-public-content.test.mjs
+      - run: node scripts/check-public-content.mjs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - id: plan
+        run: node scripts/release.mjs plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   test:
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -24,3 +64,142 @@ jobs:
       - run: go build -o bin/folio ./cmd/folio
       - run: npm run test:e2e
         working-directory: web
+  images:
+    name: Docker (${{ matrix.arch }})
+    needs: [version, test]
+    if: >-
+      needs.version.outputs.published != 'true' &&
+      ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.revision }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          tags: ${{ needs.version.outputs.image }}:${{ needs.version.outputs.version }}-${{ matrix.arch }}
+          outputs: |
+            type=image,push=true
+            type=docker,dest=${{ runner.temp }}/folio-image.tar
+          build-args: |
+            VERSION=${{ needs.version.outputs.version }}
+            REVISION=${{ needs.version.outputs.revision }}
+            CREATED=${{ needs.version.outputs.created }}
+            SOURCE_URL=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=folio-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=folio-${{ matrix.arch }}
+      - name: Load and smoke-test the built image
+        env:
+          IMAGE: ${{ needs.version.outputs.image }}
+          VERSION: ${{ needs.version.outputs.version }}
+          REVISION: ${{ needs.version.outputs.revision }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker load -i "$RUNNER_TEMP/folio-image.tar"
+          docker tag "$IMAGE:$VERSION-$ARCH" "$IMAGE:$VERSION"
+          bash scripts/smoke-image.sh "$IMAGE:$VERSION" "$VERSION" "$REVISION"
+      - name: Package Docker archive and digest
+        env:
+          IMAGE: ${{ needs.version.outputs.image }}
+          VERSION: ${{ needs.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          docker save "$IMAGE:$VERSION" | gzip -n > "$RUNNER_TEMP/release-assets/folio-$VERSION-linux-$ARCH.tar.gz"
+          printf '%s\n' "$DIGEST" > "$RUNNER_TEMP/release-assets/digest-$ARCH.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release-assets/*
+          retention-days: 7
+          if-no-files-found: error
+  release:
+    name: Publish release
+    needs: [version, images]
+    permissions:
+      contents: write
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.revision }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: docker-*
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+      - run: bash scripts/publish-release.sh "$RUNNER_TEMP/release-assets"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ needs.version.outputs.image }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SOURCE_SHA: ${{ needs.version.outputs.revision }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+  latest:
+    name: Promote latest stable image
+    needs: [version, test, release]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.test.result == 'success' &&
+      (needs.release.result == 'success' || needs.version.outputs.published == 'true')
+    permissions:
+      contents: write
+      packages: write
+    runs-on: ubuntu-latest
+    concurrency:
+      group: folio-latest-stable
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.revision }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: node scripts/promote-latest.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,8 +1,26 @@
 # Deploy Folio on a homelab
 
-Run these steps in an SSH session on your Docker host. You need Bash, Git, curl, Docker Engine, and Docker Compose v2, with permission to run Docker. Folio's image supports amd64 and arm64 hosts. Your server needs internet access during the first build.
+Run these steps in an SSH session on your Docker host. You need Bash, curl, Docker Engine, and Docker Compose v2, with permission to run Docker. Folio publishes images for amd64 and arm64 hosts; source builds also need Git.
 
-## Install
+## Install a built release
+
+Choose a version from [GitHub Releases](https://github.com/artourkin/books4every1/releases). Every PR has a prerelease for testing; stable releases are published after merge. Each release contains `compose.yaml`, `folio.env.example`, `SHA256SUMS`, and built Docker archives for both architectures.
+
+For a fresh installation, create a permanent directory such as `~/folio`, download the release's Compose and environment files there, copy `folio.env.example` to `.env`, and set mode 600. Set a unique `FOLIO_PASSWORD`, your server's LAN IP in `FOLIO_BIND_ADDR`, and `FOLIO_PORT=8080`, then run `docker compose up -d`. The release Compose file pins its image version and requires no source checkout or build.
+
+To try a PR on an existing installation, download its release's `compose.yaml` as `compose.release.yaml` into your existing installation directory, using the command in its prerelease notes. This separate file pins the image without changing a source checkout or your existing `.env`. Keep the same Compose project name and volume; a new directory can select a different, empty named volume. Then run:
+
+```sh
+docker compose -f compose.release.yaml pull folio
+docker compose -f compose.release.yaml up -d folio
+curl --fail http://reader.example.test:8080/api/v1/health
+```
+
+You can also download the architecture-specific `.tar.gz` and `SHA256SUMS`, verify the checksum, and load it with `docker load -i FILE.tar.gz`. Then start with `docker compose -f compose.release.yaml up -d --pull never folio`. These archives work without registry login. Use `amd64` on Intel/AMD hardware and `arm64` on ARM hardware. Continue using `-f compose.release.yaml` for maintenance of an upgraded installation; fresh installations using `compose.yaml` use the default `docker compose` command.
+
+The first GHCR package may need its visibility changed to **Public** in the repository owner's GitHub package settings for anonymous registry pulls. GitHub's release archives remain directly downloadable either way. Package publishing uses the workflow's own token, with no personal registry secret.
+
+## Install from source
 
 Use `main` for the current app, including PDF handwriting. To test an unmerged pull request, replace `main` with its feature branch and switch back to `main` after the PR is merged.
 
@@ -42,7 +60,14 @@ The external host port is configured by `FOLIO_PORT`. The Go server continues li
 
 ```sh
 docker compose logs --tail=50 folio
-# Pull merged updates, rebuild, and restart (also switches older pen-branch checkouts):
+# A release installation: select the desired FOLIO_IMAGE in .env, then:
+docker compose pull folio
+docker compose up -d --no-build folio
+```
+
+For a source-build installation instead:
+
+```sh
 git fetch origin
 git switch main
 git pull --ff-only
@@ -50,6 +75,8 @@ docker compose up -d --build
 ```
 
 The container restarts automatically with Docker. `docker compose down` keeps the library volume. Avoid `down -v` when you want to retain books and annotations. Keep this checkout directory's name stable, or consistently use a fixed Compose project name, so updates reuse the same named volume.
+
+Back up before upgrading. Release notes identify the exact source commit, image digest, architecture downloads, and version. `curl http://reader.example.test:8080/api/v1/health` returns the running version and revision; `docker compose exec folio /app/folio -version` prints the build details. Rollback of the image alone does not reverse database migrations; retain the matching data backup.
 
 For backups, stop the app, copy the complete named data volume, then restart it. See the README backup instructions. The volume includes books, SQLite metadata, notes, and handwriting. Keep `.env` separately as it contains the sign-in configuration.
 

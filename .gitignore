@@ -5,6 +5,16 @@
 /web/test-results/
 *.log
 .env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.key
+id_rsa
+id_ed25519
 
 /web/public/pdfjs/
 /web/*.tsbuildinfo

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"github.com/folio-reader/folio"
 	"github.com/folio-reader/folio/internal/server"
 	"io"
 	"log"
@@ -25,7 +27,12 @@ func main() {
 	data := flag.String("data", env("FOLIO_DATA", "data"), "Persistent data directory")
 	web := flag.String("web", env("FOLIO_WEB", "web/dist"), "Built web assets")
 	reset := flag.String("reset-password", "", "Reset an account password from stdin and exit")
+	version := flag.Bool("version", false, "Print build version and exit")
 	flag.Parse()
+	if *version {
+		fmt.Printf("Folio %s (revision %s, built %s)\n", folio.Version(), folio.Revision, folio.BuiltAt)
+		return
+	}
 	s, e := server.New(server.Config{DataDir: *data, WebDir: *web, Password: os.Getenv("FOLIO_PASSWORD"), APIToken: os.Getenv("FOLIO_API_TOKEN"), SecureCookie: os.Getenv("FOLIO_SECURE_COOKIE") == "true"})
 	if e != nil {
 		log.Fatal(e)
@@ -55,7 +62,7 @@ func main() {
 		defer cancel()
 		srv.Shutdown(c)
 	}()
-	log.Printf("Folio is listening at http://%s", *addr)
+	log.Printf("Folio %s is listening at http://%s", folio.Version(), *addr)
 	if e = srv.ListenAndServe(); e != nil && e != http.ErrServerClosed {
 		log.Fatal(e)
 	}
